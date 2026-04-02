@@ -1,0 +1,33 @@
+export const colors = {
+  red: '#f00',
+  white: '#fff',
+  black: '#000',
+  blue: '#00f',
+  primary: '#008BEF',
+  primary2: '#8DCFFF',
+  primary3: '#E0F2FF',
+  gray10: '#121212',
+  gray9: '#38383A',
+  gray8: '#4F5052',
+  gray7: '#666769',
+  gray6: '#929397',
+  gray5: '#AFB0B4',
+  gray4: '#CFD0D4',
+  gray3: '#E0E1E5',
+  gray2: '#EAEBEF',
+  gray1: '#F5F6F9',
+  gray0: '#F8FAFC',
+  mainRed: '#FF5436',
+  subRed: '#FEE2DD',
+  mainOrange: '#FFA750',
+  subOrange: '#FFF0E3',
+  mainYellow: '#F8C820',
+  subYellow: '#FDF5D6',
+  mainGreen: '#3EC767',
+  subGreen: '#E3F9EC',
+  mainPurple: '#9576F4',
+  subPurple: '#EFEAFF',
+} as const;
+
+export type ColorKey = keyof typeof colors;
+export type ColorValue = (typeof colors)[ColorKey];
