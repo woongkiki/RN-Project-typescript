@@ -32,6 +32,7 @@ import SeminarInfo from '../screens/seminar/SeminarInfo';
 import Adjustment from '../screens/adjust/Adjustment';
 import StatScreen from '../screens/statistics/StatScreen';
 import { BASE_URL } from '../api/util';
+import { ROLE_LEVEL } from '../types';
 import NotificationScreen from '../screens/notification/NotificationScreen';
 
 const Stack = createNativeStackNavigator<MainStackParamList>();
@@ -47,7 +48,9 @@ const styles = StyleSheet.create({
 
 function TabNavigator() {
   const user = useAuthStore(state => state.user); // ← 변경
-  const brandConfig = useAuthStore(state => state.brandConfig); // ← 변경
+  const office = useAuthStore(state => state.office);
+
+  // console.log('tab navi office', office);
 
   const { bottom } = useSafeAreaInsets();
 
@@ -122,7 +125,7 @@ function TabNavigator() {
           ),
         }}
       />
-      {(user?.grade ?? 0) > 2 && (
+      {(office?.planCode == 'C' || office?.planCode == 'D') && (
         <Tab.Screen
           name="Schedule"
           component={ScheduleScreen}

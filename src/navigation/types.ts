@@ -1,4 +1,4 @@
-import { BrandConfig, User } from '../types';
+import { CustomerType, Office, User } from '../types';
 
 export type RootStackParamList = {
   AuthScreen: undefined;
@@ -6,7 +6,7 @@ export type RootStackParamList = {
   FirstLogin: {
     user: User;
     token: string;
-    brandConfig: BrandConfig;
+    office: Office;
   };
 };
 
@@ -17,7 +17,7 @@ export type MainStackParamList = {
   PossibleList: undefined;
   ProgressList: { cate: string };
   AllList: undefined;
-  CustomerInfo: { idx: string };
+  CustomerInfo: { idx: string; customerType: CustomerType };
   BoardList: undefined;
   FreeBoardList: undefined;
   BoardInfo: { idx: string };
@@ -31,7 +31,6 @@ export type MainStackParamList = {
   Adjustment: undefined;
   StatScreen: undefined;
   NotificationScreen: undefined;
-  // 추가 공통 화면은 여기에 계속 추가
 };
 
 export type MainTabParamList = {
