@@ -37,15 +37,14 @@ export default function VideoListItem({ item, index, onPress }: Props) {
         },
       ]}
     >
-      <Image
-        source={{ uri: item.thumb }}
-        style={{
-          width: 128,
-          height: '100%',
-          resizeMode: 'stretch',
-          borderRadius: 10,
-        }}
-      />
+      {item.thumb ? (
+        <Image
+          source={{ uri: item.thumb }}
+          style={{ width: 128, height: '100%', resizeMode: 'stretch', borderRadius: 10 }}
+        />
+      ) : (
+        <View style={{ width: 128, height: 80, borderRadius: 10, backgroundColor: colors.gray2 }} />
+      )}
       <View style={{ width: width - 180, gap: 10, paddingVertical: 5 }}>
         <View
           style={[

@@ -26,12 +26,14 @@ function DonutChart({
 }: DonutChartProps) {
   const radius = (size - strokeWidth) / 2;
   const circumference = 2 * Math.PI * radius;
-  const progress = value / total;
+  const progress = total > 0 ? value / total : 0;
   const strokeDashoffset = circumference * (1 - progress);
   const center = size / 2;
 
   const displayText =
-    unit === 'percent' ? `${Math.round(progress * 100)}%` : `${value}/${total}`;
+    unit === 'percent'
+      ? `${Math.round(progress * 100)}%`
+      : `${value}/${total > 0 ? total : 0}`;
 
   return (
     <View style={styles.wrapper}>

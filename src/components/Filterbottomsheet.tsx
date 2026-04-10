@@ -26,17 +26,12 @@ const { height: SCREEN_HEIGHT } = Dimensions.get('window');
 const BOTTOM_SHEET_HEIGHT = SCREEN_HEIGHT * 0.72;
 
 export type ProgressStatus =
-  | '상담접수'
-  | '통화부재'
-  | '통화거절'
-  | '재통화예정'
-  | '미팅예정'
-  | '재미팅예정'
+  | '상담대기'
+  | '상담중'
   | '미팅완료'
-  | '청약진행중'
-  | '청약완료'
-  | '인수거절'
-  | '미팅취소';
+  | '계약완료'
+  | '부재'
+  | '통화';
 
 export interface FilterState {
   startDate: string;
@@ -45,31 +40,21 @@ export interface FilterState {
 }
 
 export const PROGRESS_STATUSES: ProgressStatus[] = [
-  '상담접수',
-  '통화부재',
-  '통화거절',
-  '재통화예정',
-  '미팅예정',
-  '재미팅예정',
+  '상담대기',
+  '상담중',
   '미팅완료',
-  '청약진행중',
-  '청약완료',
-  '인수거절',
-  '미팅취소',
+  '계약완료',
+  '부재',
+  '통화',
 ];
 
 export const STATUS_COLORS: Record<ProgressStatus, string> = {
-  상담접수: '#6B7280',
-  통화부재: '#F59E0B',
-  통화거절: '#EF4444',
-  재통화예정: '#8B5CF6',
-  미팅예정: '#3B82F6',
-  재미팅예정: '#06B6D4',
-  미팅완료: '#10B981',
-  청약진행중: '#F97316',
-  청약완료: '#2563EB',
-  인수거절: '#DC2626',
-  미팅취소: '#9CA3AF',
+  상담대기: '#FFA500',
+  상담중: '#007BFF',
+  미팅완료: '#17A2B8',
+  계약완료: '#28A745',
+  부재: '#6C757D',
+  통화: '#6F42C1',
 };
 
 const getToday = (): string => {
@@ -119,7 +104,10 @@ const DateInput = ({
         />
       </View>
       <View>
-        <CommonText labelText={value} labelTextStyle={[styles.dateText]} />
+        <CommonText
+          labelText={value || '날짜 선택'}
+          labelTextStyle={[styles.dateText, !value && { color: '#9CA3AF' }]}
+        />
       </View>
     </TouchableOpacity>
   </View>
@@ -146,6 +134,7 @@ const BottomSheetContent = ({
   );
 
   const parseDate = (dateStr: string): Date => {
+    if (!dateStr) return new Date();
     const [y, m, d] = dateStr.split('.').map(Number);
     return new Date(y, m - 1, d);
   };
@@ -160,12 +149,9 @@ const BottomSheetContent = ({
   const handleConfirm = (date: Date) => {
     if (pickerTarget === 'start') {
       const formatted = formatDate(date);
-      if (date > parseDate(localFilter.endDate)) {
-        setLocalFilter(prev => ({
-          ...prev,
-          startDate: formatted,
-          endDate: formatted,
-        }));
+      // 종료일이 있고 시작일이 종료일보다 늦으면 종료일도 같이 맞춤
+      if (localFilter.endDate && date > parseDate(localFilter.endDate)) {
+        setLocalFilter(prev => ({ ...prev, startDate: formatted, endDate: formatted }));
       } else {
         setLocalFilter(prev => ({ ...prev, startDate: formatted }));
       }
@@ -237,7 +223,7 @@ const BottomSheetContent = ({
   };
 
   const reset = () => {
-    setLocalFilter({ startDate: TODAY, endDate: TODAY, selectedStatuses: [] });
+    setLocalFilter({ startDate: '', endDate: '', selectedStatuses: [] });
   };
 
   const handleApply = () => {
@@ -304,7 +290,7 @@ const BottomSheetContent = ({
             locale="ko_KR"
             maximumDate={new Date()}
             minimumDate={
-              pickerTarget === 'end'
+              pickerTarget === 'end' && localFilter.startDate
                 ? parseDate(localFilter.startDate)
                 : undefined
             }
