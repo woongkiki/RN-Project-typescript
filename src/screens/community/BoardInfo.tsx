@@ -17,7 +17,7 @@ import CommonText from '../../components/CommonText';
 import { fonts } from '../../constants/fonts';
 import Bar from '../../components/Bar';
 import CommonConfirmModal from '../../components/CommonConfirmModal';
-import { BASE_URL } from '../../api/util';
+import { BASE_URL, BASE_URL2 } from '../../api/util';
 import { downloadFile } from '../../utils/downloadFile';
 import CommonInput from '../../components/CommonInput';
 import { getBoardPost } from '../../api/board';
@@ -105,7 +105,10 @@ export default function BoardInfo({ route, navigation }: Props) {
             <TouchableOpacity
               key={file.idx}
               style={[styles.row, styles.fileDownWrap]}
-              onPress={() => downloadFile(BASE_URL + file.filePath, file.fileName)}
+              onPress={() => {
+                console.log('[파일 다운로드]', { idx: file.idx, fileName: file.fileName, filePath: file.filePath, fileSize: file.fileSize, url: BASE_URL2 + file.filePath });
+                downloadFile(BASE_URL2 + file.filePath, file.fileName);
+              }}
             >
               <View style={{ width: width - 90 }}>
                 <CommonText labelText={file.fileName} numberOfLines={1} labelTextStyle={[styles.fileText]} />
