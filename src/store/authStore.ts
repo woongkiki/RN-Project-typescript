@@ -1,19 +1,17 @@
-// src/store/authStore.ts
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { User, BrandConfig } from '../types';
+import { User, Office } from '../types';
 
 interface AuthState {
-  // State
   isAuthenticated: boolean;
   user: User | null;
   token: string | null;
-  brandConfig: BrandConfig | null;
+  office: Office | null;
   isHydrated: boolean;
 
-  // Actions
-  setAuth: (user: User, token: string, brandConfig: BrandConfig) => void;
+  setAuth: (user: User, token: string, office: Office) => void;
+  updateUser: (updates: Partial<User>) => void;
   clearAuth: () => void;
   setHydrated: () => void;
 }
@@ -21,33 +19,25 @@ interface AuthState {
 export const useAuthStore = create<AuthState>()(
   persist(
     set => ({
-      // ① 상태 (State) - 데이터 보관함
       isAuthenticated: false,
       user: null,
       token: null,
-      brandConfig: null,
+      office: null,
       isHydrated: false,
 
-      // ② 액션 (Action) - 상태를 바꾸는 함수
-      setAuth: (user, token, brandConfig) =>
-        set({
-          isAuthenticated: true,
-          user,
-          token,
-          brandConfig,
-        }),
+      setAuth: (user, token, office) =>
+        set({ isAuthenticated: true, user, token, office }),
+
+      updateUser: updates =>
+        set(state => ({
+          user: state.user ? { ...state.user, ...updates } : null,
+        })),
 
       clearAuth: () =>
-        set({
-          isAuthenticated: false,
-          user: null,
-          token: null,
-          brandConfig: null,
-        }),
+        set({ isAuthenticated: false, user: null, token: null, office: null }),
 
       setHydrated: () => set({ isHydrated: true }),
     }),
-    // ③ persist - AsyncStorage에 자동 저장
     {
       name: 'auth-storage',
       storage: createJSONStorage(() => AsyncStorage),
@@ -55,11 +45,10 @@ export const useAuthStore = create<AuthState>()(
         isAuthenticated: state.isAuthenticated,
         user: state.user,
         token: state.token,
-        brandConfig: state.brandConfig,
-        // isHydrated는 저장 안 함 (매번 새로 계산)
+        office: state.office,
       }),
       onRehydrateStorage: () => state => {
-        state?.setHydrated(); // 복원 완료 시 isHydrated = true
+        state?.setHydrated();
       },
     },
   ),
