@@ -29,9 +29,19 @@ const authHeaders = () => {
   };
 };
 
+async function parseJsonSafely<T>(res: Response): Promise<ApiResponse<T>> {
+  const text = await res.text();
+  try {
+    return JSON.parse(text) as ApiResponse<T>;
+  } catch {
+    console.error('[API] Non-JSON response:', text.slice(0, 200));
+    throw new Error(`서버 오류 (HTTP ${res.status})`);
+  }
+}
+
 async function boardFetch<T>(url: string): Promise<T> {
   const res = await fetch(url, { headers: authHeaders() });
-  const json: ApiResponse<T> = await res.json();
+  const json = await parseJsonSafely<T>(res);
   const ok = json.success ?? json.result ?? false;
   if (!ok || json.data == null) {
     throw new Error(json.message ?? '요청에 실패했습니다.');
@@ -54,7 +64,7 @@ async function boardPost<T>(url: string, body: FormData | object): Promise<T> {
     headers,
     body: isFormData ? body : JSON.stringify(body),
   });
-  const json: ApiResponse<T> = await res.json();
+  const json = await parseJsonSafely<T>(res);
   const ok = json.success ?? json.result ?? false;
   if (!ok) {
     throw new Error(json.message ?? '요청에 실패했습니다.');
@@ -63,6 +73,18 @@ async function boardPost<T>(url: string, body: FormData | object): Promise<T> {
 }
 
 // ─── snake_case → camelCase 매퍼 ────────────────────────────────────
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function mapFile(raw: any) {
+  return {
+    idx: raw.idx,
+    postIdx: raw.post_idx,
+    filePath: raw.file_path,
+    fileName: raw.file_name,
+    fileSize: raw.file_size ?? 0,
+    createdAt: raw.created_at,
+  };
+}
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function mapPost(raw: any): BoardPostItem {
@@ -199,7 +221,7 @@ export const getBoardPost = async (idx: number): Promise<BoardPost> => {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const data = await boardFetch<any>(`${BASE_URL2}/api/app/board/post/${idx}`);
   const raw = data?.post ?? data;
-  return { ...mapPost(raw), content: raw.content ?? '', files: raw.files ?? [] };
+  return { ...mapPost(raw), content: raw.content ?? '', files: Array.isArray(raw.files) ? raw.files.map(mapFile) : [] };
 };
 
 export interface CreateBoardPostParams {
@@ -301,7 +323,7 @@ export const getEducationDoc = async (idx: number): Promise<BoardPost> => {
     `${BASE_URL2}/api/app/board/education/doc/${idx}`,
   );
   const raw = data?.doc ?? data;
-  return { ...mapPost(raw), content: raw.content ?? '', files: raw.files ?? [] };
+  return { ...mapPost(raw), content: raw.content ?? '', files: Array.isArray(raw.files) ? raw.files.map(mapFile) : [] };
 };
 
 // ─── 세미나 ───────────────────────────────────────────────────────────
@@ -334,5 +356,5 @@ export const getSeminarPost = async (idx: number): Promise<SeminarPost> => {
     `${BASE_URL2}/api/app/board/seminar/${idx}`,
   );
   const raw = data?.seminar ?? data;
-  return { ...mapSeminar(raw), description: raw.description ?? '', files: raw.files ?? [] };
+  return { ...mapSeminar(raw), description: raw.description ?? '', files: Array.isArray(raw.files) ? raw.files.map(mapFile) : [] };
 };

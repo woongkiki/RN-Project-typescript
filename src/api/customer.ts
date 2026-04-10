@@ -28,9 +28,19 @@ const authHeaders = (): Record<string, string> => {
   };
 };
 
+async function parseJsonSafely<T>(res: Response): Promise<ApiResponse<T>> {
+  const text = await res.text();
+  try {
+    return JSON.parse(text) as ApiResponse<T>;
+  } catch {
+    console.error('[API] Non-JSON response:', text.slice(0, 200));
+    throw new Error(`서버 오류 (HTTP ${res.status})`);
+  }
+}
+
 async function customerFetch<T>(url: string): Promise<T> {
   const res = await fetch(url, { headers: authHeaders() });
-  const json: ApiResponse<T> = await res.json();
+  const json = await parseJsonSafely<T>(res);
   const ok = json.success ?? json.result ?? false;
   if (!ok || json.data == null) {
     throw new Error(json.message ?? '요청에 실패했습니다.');
@@ -44,7 +54,7 @@ async function customerPatch<T>(url: string, body: object): Promise<T> {
     headers: authHeaders(),
     body: JSON.stringify(body),
   });
-  const json: ApiResponse<T> = await res.json();
+  const json = await parseJsonSafely<T>(res);
   const ok = json.success ?? json.result ?? false;
   if (!ok) {
     throw new Error(json.message ?? '요청에 실패했습니다.');
@@ -58,7 +68,7 @@ async function customerPost<T>(url: string, body: object): Promise<T> {
     headers: authHeaders(),
     body: JSON.stringify(body),
   });
-  const json: ApiResponse<T> = await res.json();
+  const json = await parseJsonSafely<T>(res);
   const ok = json.success ?? json.result ?? false;
   if (!ok) {
     throw new Error(json.message ?? '요청에 실패했습니다.');
