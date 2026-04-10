@@ -21,9 +21,9 @@ type NavigationProp = NativeStackNavigationProp<MainStackParamList>;
 export default function MyPageScreen() {
   const navigation = useNavigation<NavigationProp>();
 
-  const user = useAuthStore(state => state.user); // ← 변경
-  const brandConfig = useAuthStore(state => state.brandConfig); // ← 변경
-  const clearAuth = useAuthStore(state => state.clearAuth); // ← 변경 (logout → clearAuth)
+  const user = useAuthStore(state => state.user);
+  const office = useAuthStore(state => state.office);
+  const clearAuth = useAuthStore(state => state.clearAuth);
 
   const { width } = useAppDimensions();
 
@@ -59,7 +59,7 @@ export default function MyPageScreen() {
       <View style={[styles.myinfoWrap]}>
         <TouchableOpacity onPress={() => navigation.navigate('MyInfoUpdate')}>
           <CommonText
-            labelText={`${brandConfig?.brandName}`}
+            labelText={office?.name ?? ''}
             style={[fonts.semiBold, { color: colors.primary }]}
           />
           <View style={[styles.row, { gap: 10, marginTop: 10 }]}>
@@ -154,7 +154,7 @@ export default function MyPageScreen() {
             <CommonText labelText="전체 고객 리스트" style={[styles.defMenu]} />
           </TouchableOpacity>
         </View>
-        {(user?.grade ?? 0) > 2 && (
+        {(office?.planCode == 'C' || office?.planCode == 'D') && (
           <View
             style={{
               paddingVertical: 25,
@@ -246,9 +246,11 @@ export default function MyPageScreen() {
           <TouchableOpacity onPress={() => navigation.navigate('Adjustment')}>
             <CommonText labelText="정산" style={[styles.defMenu]} />
           </TouchableOpacity>
-          <TouchableOpacity onPress={() => navigation.navigate('StatScreen')}>
-            <CommonText labelText="통계/분석" style={[styles.defMenu]} />
-          </TouchableOpacity>
+          {(office?.planCode == 'C' || office?.planCode == 'D') && (
+            <TouchableOpacity onPress={() => navigation.navigate('StatScreen')}>
+              <CommonText labelText="통계/분석" style={[styles.defMenu]} />
+            </TouchableOpacity>
+          )}
         </View>
       </View>
       <CommonConfirmModal

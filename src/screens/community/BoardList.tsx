@@ -1,124 +1,112 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { FlatList, ScrollView, View } from 'react-native';
 import Layout from '../../components/Layout';
-import { FlatList, ScrollView, StyleSheet, View } from 'react-native';
 import SubHeader from '../../components/SubHeader';
 import { MainStackParamList } from '../../navigation/types';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
-import { colors } from '../../constants/colors';
-import { useAppDimensions } from '../../hooks/useAppDimensions';
 import SearchInput from '../../components/SearchInput';
-import { fonts } from '../../constants/fonts';
 import CategoryButton from '../../components/CategoryButton';
 import BoardCommon from '../../components/BoardCommon';
+import CommonText from '../../components/CommonText';
+import { getBoardCategories, getBoardPosts } from '../../api/board';
+import { BoardCategory, BoardPostItem } from '../../types';
 
 type Props = NativeStackScreenProps<MainStackParamList, 'BoardList'>;
 
-type DBItem = {
-  idx: number;
-  title: string;
-  category: string;
-  date: string;
-  isNew?: boolean;
-};
-
-const INITIAL_MENUS: DBItem[] = [
-  {
-    idx: 1,
-    title: '보험상품 문의드립니다.',
-    category: '보험상품',
-    date: '2026.03.13',
-  },
-  {
-    idx: 2,
-    title: '보험약관 문의드립니다.',
-    category: '보험약관',
-    date: '2026.03.13',
-  },
-];
-
-const CATEGORIES = ['전체', '보험상품', '보험약관', '보험심사', '보상처리'];
+const toDate = (iso: string | null | undefined) => iso?.slice(0, 10).replace(/-/g, '.') ?? '';
 
 export default function BoardList({ navigation }: Props) {
-  const { width } = useAppDimensions();
-
   const [schText, setSchText] = useState('');
-
-  const [selectCategory, setSelectCategory] = useState('전체');
-  const [dbData, setDBData] = useState<DBItem[]>(INITIAL_MENUS);
+  const [categories, setCategories] = useState<BoardCategory[]>([]);
+  const [selectedCategoryIdx, setSelectedCategoryIdx] = useState<number | null>(null);
+  const [posts, setPosts] = useState<BoardPostItem[]>([]);
 
   const scrollViewRef = useRef<ScrollView>(null);
-  const itemPositions = useRef<Record<string, number>>({});
+  const itemPositions = useRef<Partial<Record<number | 'all', number>>>({});
 
+  // 카테고리 목록 로드
   useEffect(() => {
-    const x = itemPositions.current[selectCategory];
-    if (x !== undefined) {
-      scrollViewRef.current?.scrollTo({
-        x: Math.max(0, x - 20),
-        animated: true,
-      });
-    }
-  }, [selectCategory]);
+    getBoardCategories('general').then(setCategories).catch(e => console.log('[categories error]', e?.message));
+  }, []);
 
-  const renderItem = ({ item, index }: { item: DBItem; index: number }) => {
-    return (
-      <View style={{ paddingHorizontal: 20 }}>
-        <BoardCommon item={item} navigation={navigation} />
-      </View>
-    );
+  // 게시글 목록 로드 (카테고리 or 검색어 변경 시)
+  useEffect(() => {
+    getBoardPosts({
+      boardType: 'general',
+      categoryIdx: selectedCategoryIdx,
+      keyword: schText,
+    }).then(res => setPosts(res.posts));
+  }, [selectedCategoryIdx, schText]);
+
+  const handleCategorySelect = (idx: number | null) => {
+    setSelectedCategoryIdx(idx);
+    const key = idx ?? 'all';
+    const x = itemPositions.current[key];
+    if (x !== undefined) {
+      scrollViewRef.current?.scrollTo({ x: Math.max(0, x - 20), animated: true });
+    }
   };
+
+  const renderItem = ({ item }: { item: BoardPostItem }) => (
+    <View style={{ paddingHorizontal: 20 }}>
+      <BoardCommon
+        item={{ idx: item.idx, title: item.title, category: item.categoryName ?? '', date: toDate(item.createdAt) }}
+        navigation={navigation}
+      />
+    </View>
+  );
 
   return (
     <Layout>
-      <SubHeader
-        headerLabel="일반 게시판"
-        headerLeftOnPress={() => navigation.goBack()}
-      />
+      <SubHeader headerLabel="일반 게시판" headerLeftOnPress={() => navigation.goBack()} />
       <View style={{ paddingHorizontal: 20, paddingTop: 10 }}>
         <SearchInput
           value={schText}
           onChangeText={setSchText}
-          placeholder="고객명, 지역을 검색하세요"
-          onSearchPress={() => {
-            // 검색 로직
-          }}
+          placeholder="제목을 검색하세요"
+          onSearchPress={() => {}}
         />
       </View>
-      {/* 좌우 스크롤 */}
+
       <ScrollView
-        ref={scrollViewRef} // 추가
+        ref={scrollViewRef}
         horizontal
         showsHorizontalScrollIndicator={false}
-        contentContainerStyle={{
-          paddingHorizontal: 20,
-          paddingBottom: 20,
-          paddingTop: 10,
-          gap: 10,
-          alignItems: 'center',
-        }}
-        style={{ flexGrow: 0 }} // ✅ 추가
+        contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 20, paddingTop: 10, gap: 10, alignItems: 'center' }}
+        style={{ flexGrow: 0 }}
       >
-        {CATEGORIES.map(cate => (
+        {/* 전체 버튼 */}
+        <View onLayout={e => { itemPositions.current['all'] = e.nativeEvent.layout.x; }}>
+          <CategoryButton
+            onPress={() => handleCategorySelect(null)}
+            buttonStats={selectedCategoryIdx === null}
+            label="전체"
+          />
+        </View>
+        {categories.map(cat => (
           <View
-            key={cate}
-            onLayout={e => {
-              itemPositions.current[cate] = e.nativeEvent.layout.x;
-            }}
+            key={cat.idx}
+            onLayout={e => { itemPositions.current[cat.idx] = e.nativeEvent.layout.x; }}
           >
             <CategoryButton
-              onPress={() => setSelectCategory(cate)}
-              buttonStats={selectCategory === cate}
-              label={cate}
+              onPress={() => handleCategorySelect(cat.idx)}
+              buttonStats={selectedCategoryIdx === cat.idx}
+              label={cat.name}
             />
           </View>
         ))}
       </ScrollView>
 
-      {/* 좌우 스크롤 */}
       <FlatList
         style={{ flex: 1 }}
-        data={dbData}
+        data={posts}
         renderItem={renderItem}
-        keyExtractor={(item, index) => index.toString()}
+        keyExtractor={item => item.idx.toString()}
+        ListEmptyComponent={
+          <View style={{ flex: 1, alignItems: 'center', marginTop: 60 }}>
+            <CommonText labelText="게시글이 없습니다" labelTextStyle={{ color: '#999', fontSize: 14 }} />
+          </View>
+        }
       />
     </Layout>
   );

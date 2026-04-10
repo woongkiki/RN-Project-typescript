@@ -1,5 +1,5 @@
 // src/screens/home/HomeScreen.tsx
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Image } from 'react-native';
 import { useAuthStore } from '../../store'; // ← 변경
 import { useNavigation } from '@react-navigation/native';
@@ -18,6 +18,10 @@ import { useAppDimensions } from '../../hooks/useAppDimensions';
 import Bar from '../../components/Bar';
 import BoardCommon from '../../components/BoardCommon';
 import { BASE_URL } from '../../api/util';
+import { BoardPostItem, DbStats } from '../../types';
+import { getBoardPosts } from '../../api/board';
+import { getDbStats } from '../../api/customer';
+import { getPlanMenus, MenuCode } from '../../api/plan';
 
 type NavigationProp = NativeStackNavigationProp<
   MainStackParamList,
@@ -30,19 +34,49 @@ export default function HomeScreen() {
   const { width, isFolded, isTablet } = useAppDimensions();
 
   const navigation = useNavigation<NavigationProp>();
-  const user = useAuthStore(state => state.user); // ← 변경
-  const brandConfig = useAuthStore(state => state.brandConfig); // ← 변경
+  const user = useAuthStore(state => state.user);
+  const office = useAuthStore(state => state.office);
 
-  const buttonWidth =
-    (user?.grade ?? 0) > 2 ? (width - 40) / 4 : (width - 41) / 3;
+  const [planMenus, setPlanMenus] = useState<MenuCode[]>([]);
+
+  useEffect(() => {
+    if (!office) {
+      return;
+    }
+    // planIdx 없는 기존 세션은 planCode로 fallback
+    const planIdx =
+      office.planIdx ??
+      (office.planCode === 'C' ? 3 : office.planCode === 'B' ? 2 : 1);
+    getPlanMenus(planIdx).then(setPlanMenus);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [office?.planIdx, office?.planCode]);
+
+  console.log('user1', user);
+
+  const hasMenu = (code: MenuCode) => planMenus.includes(code);
+
+  const buttonWidth = hasMenu('schedule') ? (width - 40) / 4 : (width - 41) / 3;
 
   const menuSettingMove = () => {
     navigation.navigate('MenuSetting');
   };
 
+  const [recentPosts, setRecentPosts] = useState<BoardPostItem[]>([]);
+  const [dbStats, setDbStats] = useState<DbStats | null>(null);
+
+  useEffect(() => {
+    getBoardPosts({ boardType: 'general', limit: 2 }).then(res =>
+      setRecentPosts(res.posts.slice(0, 2)),
+    );
+  }, []);
+
   const today = new Date();
   const [currentYear, setCurrentYear] = useState(today.getFullYear());
   const [currentMonth, setCurrentMonth] = useState(today.getMonth() + 1); // 1~12
+
+  useEffect(() => {
+    getDbStats(currentYear, currentMonth).then(setDbStats);
+  }, [currentYear, currentMonth]);
 
   const isNextDisabled =
     currentYear === today.getFullYear() &&
@@ -76,7 +110,7 @@ export default function HomeScreen() {
       scrollable={true}
       headerChildren={
         <MainHeader
-          headerLabel={brandConfig?.brandName + ''}
+          headerLabel={office?.name ?? ''}
           headerRightContent={
             <TouchableOpacity
               onPress={() => navigation.navigate('NotificationScreen')}
@@ -191,20 +225,20 @@ export default function HomeScreen() {
               }}
             >
               <DonutChart
-                value={75}
-                total={100}
+                value={dbStats?.usedCount ?? 0}
+                total={dbStats?.totalCount ?? 1}
                 unit="percent"
                 label="사용 DB"
               />
               <DonutChart
-                value={3}
-                total={10}
+                value={dbStats?.meetingCount ?? 0}
+                total={dbStats?.totalCount ?? 1}
                 unit="fraction"
                 label="미팅완료"
               />
               <DonutChart
-                value={3}
-                total={10}
+                value={dbStats?.contractCount ?? 0}
+                total={dbStats?.totalCount ?? 1}
                 unit="fraction"
                 label="계약완료"
               />
@@ -300,7 +334,7 @@ export default function HomeScreen() {
             iconHeight={30}
           />
         </View>
-        {(user?.grade ?? 0) > 2 && (
+        {(office?.planCode == 'C' || office?.planCode == 'D') && (
           <View style={[styles.menuButtonWrap, { width: buttonWidth }]}>
             <MenuButton
               onPress={() =>
@@ -313,7 +347,7 @@ export default function HomeScreen() {
             />
           </View>
         )}
-        {(user?.grade ?? 0) > 2 && (
+        {(office?.planCode == 'C' || office?.planCode == 'D') && (
           <View style={[styles.menuButtonWrap, { width: buttonWidth }]}>
             <MenuButton
               onPress={() => navigation.navigate('StatScreen')}
@@ -356,41 +390,44 @@ export default function HomeScreen() {
             labelText="일반 게시판"
             style={[fonts.bold, { fontSize: 20, color: colors.gray10 }]}
           />
-          <TouchableOpacity
-            onPress={() => navigation.navigate('BoardList')}
-            style={{ flexDirection: 'row', alignItems: 'center', gap: 7 }}
-          >
-            <CommonText
-              labelText="더보기"
-              style={[fonts.medium, { fontSize: 13, color: colors.primary }]}
-            />
-            <Image
-              source={{ uri: BASE_URL + '/images/sky_arr.png' }}
-              style={{ width: 3, height: 6 }}
-            />
-          </TouchableOpacity>
+          {recentPosts.length > 0 && (
+            <TouchableOpacity
+              onPress={() => navigation.navigate('BoardList')}
+              style={{ flexDirection: 'row', alignItems: 'center', gap: 7 }}
+            >
+              <CommonText
+                labelText="더보기"
+                style={[fonts.medium, { fontSize: 13, color: colors.primary }]}
+              />
+              <Image
+                source={{ uri: BASE_URL + '/images/sky_arr.png' }}
+                style={{ width: 3, height: 6 }}
+              />
+            </TouchableOpacity>
+          )}
         </View>
 
-        <BoardCommon
-          item={{
-            idx: 5,
-            isNew: true,
-            category: '보험상품',
-            title: '보험상품 문의드립니다. 보험상품 문의드립니다.',
-            date: '2026.03.15',
-          }}
-          navigation={navigation}
-        />
-        <BoardCommon
-          item={{
-            idx: 5,
-            isNew: true,
-            category: '보험상품',
-            title: '보험상품 문의드립니다. 보험상품 문의드립니다.',
-            date: '2026.03.15',
-          }}
-          navigation={navigation}
-        />
+        {recentPosts.length === 0 ? (
+          <View style={{ alignItems: 'center', paddingVertical: 20 }}>
+            <CommonText
+              labelText="게시글이 없습니다"
+              labelTextStyle={{ fontSize: 14, color: colors.gray6 }}
+            />
+          </View>
+        ) : (
+          recentPosts.map(post => (
+            <BoardCommon
+              key={post.idx}
+              item={{
+                idx: post.idx,
+                title: post.title,
+                category: post.categoryName ?? '',
+                date: post.createdAt?.slice(0, 10).replace(/-/g, '.') ?? '',
+              }}
+              navigation={navigation}
+            />
+          ))
+        )}
       </View>
     </Layout>
   );

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { MainStackParamList } from '../../navigation/types';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import Layout from '../../components/Layout';
@@ -27,19 +27,26 @@ import {
 } from '@react-native-documents/picker';
 import type { DocumentPickerResponse } from '@react-native-documents/picker';
 import CategorySelectModal from '../../components/CategorySelectModal';
+import { createBoardPost, getBoardCategories } from '../../api/board';
+import { BoardCategory } from '../../types';
 
 type Props = NativeStackScreenProps<MainStackParamList, 'BoardForm'>;
-
-const CATEGORIES = ['보험상품', '보험약관', '보험심사', '보상처리'];
 
 export default function BoardForm({ navigation }: Props) {
   const { width } = useAppDimensions();
 
   const [categoryModal, setCategoryModal] = useState(false);
+  const [categories, setCategories] = useState<BoardCategory[]>([]);
   const [category, setCategory] = useState('');
   const [title, setTitle] = useState('');
   const [content, setContent] = useState('');
   const [fileData, setFileData] = useState<DocumentPickerResponse | null>(null);
+
+  useEffect(() => {
+    getBoardCategories('free')
+      .then(setCategories)
+      .catch(() => {});
+  }, []);
 
   const handleFilePick = async () => {
     try {
@@ -83,6 +90,44 @@ export default function BoardForm({ navigation }: Props) {
     setFileData(null);
   };
 
+  const handleSubmit = async () => {
+    if (!category) {
+      Alert.alert('알림', '카테고리를 선택해주세요.');
+      return;
+    }
+    if (!title.trim()) {
+      Alert.alert('알림', '제목을 입력해주세요.');
+      return;
+    }
+    if (!content.trim()) {
+      Alert.alert('알림', '내용을 입력해주세요.');
+      return;
+    }
+
+    const selectedCategory = categories.find(c => c.name === category);
+    try {
+      await createBoardPost({
+        boardType: 'free',
+        categoryIdx: selectedCategory?.idx ?? null,
+        title: title.trim(),
+        content: content.trim(),
+        file: fileData
+          ? {
+              uri: fileData.uri ?? '',
+              name: fileData.name ?? '',
+              type: fileData.type ?? 'application/octet-stream',
+            }
+          : null,
+      });
+      Alert.alert('알림', '게시글이 등록되었습니다.', [
+        { text: '확인', onPress: () => navigation.goBack() },
+      ]);
+    } catch (e) {
+      console.log('error', e);
+      Alert.alert('오류', '게시글 등록에 실패했습니다.');
+    }
+  };
+
   return (
     <Layout
       footerChildren={
@@ -95,6 +140,7 @@ export default function BoardForm({ navigation }: Props) {
           }}
         >
           <TouchableOpacity
+            onPress={handleSubmit}
             style={{
               height: 52,
               borderRadius: 30,
@@ -245,7 +291,7 @@ export default function BoardForm({ navigation }: Props) {
         onClose={() => setCategoryModal(false)}
         selectedCategory={category}
         onSelect={setCategory}
-        categories={CATEGORIES}
+        categories={categories.map(c => c.name)}
       />
     </Layout>
   );

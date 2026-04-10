@@ -1,11 +1,12 @@
-import React, { useState } from 'react';
-import { View, StyleSheet, TouchableOpacity, Image } from 'react-native';
+import React, { useEffect, useState } from 'react';
+import { View, StyleSheet, TouchableOpacity } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import DraggableFlatList, {
   ScaleDecorator,
   RenderItemParams,
 } from 'react-native-draggable-flatlist';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { MainStackParamList } from '../../navigation/types';
 import Layout from '../../components/Layout';
 import SubHeader from '../../components/SubHeader';
@@ -16,127 +17,92 @@ import { colors } from '../../constants/colors';
 import { useAppDimensions } from '../../hooks/useAppDimensions';
 import { BASE_URL } from '../../api/util';
 import { useAuthStore } from '../../store';
+import { getPlanMenus, MenuCode } from '../../api/plan';
 
 type Props = NativeStackScreenProps<MainStackParamList, 'MenuSetting'>;
 
 type MenuItem = {
-  key: string;
+  key: MenuCode;
   label: string;
   icon: string;
 };
 
-// C,D 등급
-const INITIAL_MENUS: MenuItem[] = [
-  { key: 'db', label: 'DB리스트', icon: 'dblist_icon.png' },
-  {
-    key: 'schedule',
-    label: '스케줄',
-    icon: 'schedule_icon_b.png',
-  },
-  {
-    key: 'education',
-    label: '교육',
-    icon: 'edu_icon.png',
-  },
-  {
-    key: 'community',
-    label: '커뮤니티',
-    icon: 'community_icon.png',
-  },
-  {
-    key: 'payment',
-    label: '정산',
-    icon: 'adjust_icon.png',
-  },
-  {
-    key: 'stats',
-    label: '통계/분석',
-    icon: 'stat_icon.png',
-  },
-  {
-    key: 'seminar',
-    label: '세미나',
-    icon: 'seminar_icon.png',
-  },
-];
+const MENU_STORAGE_KEY = 'menu-order';
 
-// A,B등급
-const INITIAL_MENUS2: MenuItem[] = [
-  { key: 'db', label: 'DB리스트', icon: 'dblist_icon.png' },
-  {
-    key: 'education',
-    label: '교육',
-    icon: 'edu_icon.png',
-  },
-  {
-    key: 'community',
-    label: '커뮤니티',
-    icon: 'community_icon.png',
-  },
-  {
-    key: 'payment',
-    label: '정산',
-    icon: 'adjust_icon.png',
-  },
-
-  {
-    key: 'seminar',
-    label: '세미나',
-    icon: 'seminar_icon.png',
-  },
-];
+const MENU_DEFS: Record<MenuCode, Omit<MenuItem, 'key'>> = {
+  db:        { label: 'DB리스트',  icon: 'dblist_icon.png' },
+  schedule:  { label: '스케줄',    icon: 'schedule_icon_b.png' },
+  education: { label: '교육',      icon: 'edu_icon.png' },
+  community: { label: '커뮤니티', icon: 'community_icon.png' },
+  payment:   { label: '정산',      icon: 'adjust_icon.png' },
+  stats:     { label: '통계/분석', icon: 'stat_icon.png' },
+  seminar:   { label: '세미나',   icon: 'seminar_icon.png' },
+};
 
 export default function MenuSettingScreen({ navigation }: Props) {
   const { width } = useAppDimensions();
+  const office = useAuthStore(state => state.office);
+  const [menus, setMenus] = useState<MenuItem[]>([]);
 
-  const user = useAuthStore(state => state.user); // ← 변경
-  const [menus, setMenus] = useState<MenuItem[]>(
-    (user?.grade ?? 0) > 2 ? INITIAL_MENUS : INITIAL_MENUS2,
-  );
+  useEffect(() => {
+    if (!office) { return; }
+    // planIdx 없는 기존 세션은 planCode로 fallback
+    const planIdx = office.planIdx ?? (office.planCode === 'C' ? 3 : office.planCode === 'B' ? 2 : 1);
 
-  const handleSave = () => {
-    // 저장 로직 (API 호출 등)
-    console.log(
-      '저장된 순서:',
-      menus.map(m => m.key),
+    getPlanMenus(planIdx).then(async allowedCodes => {
+      // 저장된 순서 불러오기
+      const saved = await AsyncStorage.getItem(MENU_STORAGE_KEY);
+      const savedOrder: MenuCode[] = saved ? JSON.parse(saved) : [];
+
+      // 저장된 순서 중 현재 플랜에서 허용된 코드만 유지
+      const ordered = savedOrder.filter(code => allowedCodes.includes(code));
+      // 저장 목록에 없는 신규 허용 코드는 뒤에 추가
+      const newCodes = allowedCodes.filter(code => !ordered.includes(code));
+      const finalCodes = [...ordered, ...newCodes];
+
+      setMenus(finalCodes.map(code => ({ key: code, ...MENU_DEFS[code] })));
+    });
+  }, [office?.planIdx]);
+
+  const handleSave = async () => {
+    await AsyncStorage.setItem(
+      MENU_STORAGE_KEY,
+      JSON.stringify(menus.map(m => m.key)),
     );
     navigation.goBack();
   };
 
-  const renderItem = ({ item, drag, isActive }: RenderItemParams<MenuItem>) => {
-    return (
-      <ScaleDecorator>
-        <TouchableOpacity
-          onLongPress={drag}
-          activeOpacity={1}
-          style={[styles.row, isActive && styles.rowActive]}
+  const renderItem = ({ item, drag, isActive }: RenderItemParams<MenuItem>) => (
+    <ScaleDecorator>
+      <TouchableOpacity
+        onLongPress={drag}
+        activeOpacity={1}
+        style={[styles.row, isActive && styles.rowActive]}
+      >
+        <View
+          style={{
+            flexDirection: 'row',
+            alignItems: 'center',
+            columnGap: 15,
+            width: width - 96,
+          }}
         >
-          <View
-            style={{
-              flexDirection: 'row',
-              alignItems: 'center',
-              columnGap: 15,
-              width: width - 96,
-            }}
-          >
-            <IconBox
-              iconWrapStyle={{ width: 46, height: 46 }}
-              iconWidth={24}
-              iconHeight={24}
-              iconUri={BASE_URL + '/images/' + item.icon}
-            />
-            <CommonText labelText={item.label} labelTextStyle={styles.label} />
-          </View>
-          <View style={styles.dragHandle}>
-            {/* 햄버거 아이콘 (≡) */}
-            {[0, 1, 2].map(i => (
-              <View key={i} style={styles.bar} />
-            ))}
-          </View>
-        </TouchableOpacity>
-      </ScaleDecorator>
-    );
-  };
+          <IconBox
+            iconWrapStyle={{ width: 46, height: 46 }}
+            iconWidth={24}
+            iconHeight={24}
+            iconUri={BASE_URL + '/images/' + item.icon}
+          />
+          <CommonText labelText={item.label} labelTextStyle={styles.label} />
+        </View>
+        <View style={styles.dragHandle}>
+          {[0, 1, 2].map(i => (
+            <View key={i} style={styles.bar} />
+          ))}
+        </View>
+      </TouchableOpacity>
+    </ScaleDecorator>
+  );
 
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
@@ -158,7 +124,6 @@ export default function MenuSettingScreen({ navigation }: Props) {
             />
           }
         />
-
         <TouchableOpacity style={styles.saveButton} onPress={handleSave}>
           <CommonText labelText="저장" labelTextStyle={styles.saveText} />
         </TouchableOpacity>
@@ -189,12 +154,6 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
     shadowRadius: 4,
-  },
-  icon: {
-    width: 36,
-    height: 36,
-    marginRight: 12,
-    borderRadius: 8,
   },
   label: {
     fontSize: 15,

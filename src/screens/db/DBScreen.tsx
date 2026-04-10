@@ -1,7 +1,6 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   View,
-  Text,
   StyleSheet,
   Image,
   TouchableOpacity,
@@ -21,6 +20,8 @@ import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { MainStackParamList } from '../../navigation/types';
 import { useNavigation } from '@react-navigation/native';
 import { BASE_URL } from '../../api/util';
+import { getProgressCounts, getStatusHistory } from '../../api/customer';
+import { ProgressCounts, StatusHistoryItem } from '../../types';
 
 type NavigationProp = NativeStackNavigationProp<MainStackParamList>;
 
@@ -29,10 +30,31 @@ export default function DBScreen() {
 
   const navigation = useNavigation<NavigationProp>();
 
-  const [refreshing, setRefreshing] = useState(false); // 새로고침 디바운스용
+  const [refreshing, setRefreshing] = useState(false);
   const [currentDate, setCurrentDate] = useState(new Date());
+  const [orderBy, setOrderBy] = useState(true); // true = desc
 
-  const [orderBy, setOrderBy] = useState(true); // true desc
+  const [progressCounts, setProgressCounts] = useState<ProgressCounts>({
+    total: 0,
+    meeting: 0,
+    call: 0,
+    absent: 0,
+  });
+  const [statusHistory, setStatusHistory] = useState<StatusHistoryItem[]>([]);
+
+  const loadData = () => {
+    getProgressCounts().then(setProgressCounts);
+    getStatusHistory(20, orderBy).then(setStatusHistory);
+  };
+
+  useEffect(() => {
+    loadData();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    getStatusHistory(20, orderBy).then(setStatusHistory);
+  }, [orderBy]);
 
   const formatDate = (date: Date) => {
     const year = date.getFullYear();
@@ -47,6 +69,7 @@ export default function DBScreen() {
     if (refreshing) return;
     setRefreshing(true);
     setCurrentDate(new Date());
+    loadData();
     setTimeout(() => setRefreshing(false), 1500);
   };
 
@@ -155,8 +178,20 @@ export default function DBScreen() {
               { justifyContent: 'space-between', marginTop: 20 },
             ]}
           >
-            <ProgressBox value={3} total={10} label={'DB 진행률'} />
-            <ProgressBox value={2} total={10} label={'미팅 진행률'} />
+            <ProgressBox
+              value={
+                progressCounts.meeting +
+                progressCounts.call +
+                progressCounts.absent
+              }
+              total={progressCounts.total}
+              label={'DB 진행률'}
+            />
+            <ProgressBox
+              value={progressCounts.meeting}
+              total={progressCounts.total}
+              label={'미팅 진행률'}
+            />
           </View>
         </View>
       </View>
@@ -191,9 +226,9 @@ export default function DBScreen() {
           >
             <BusinessCountButton
               label="미팅"
-              count="1"
+              count={String(progressCounts.meeting)}
               onPress={() =>
-                navigation.navigate('ProgressList', { cate: '미팅' })
+                navigation.navigate('ProgressList', { cate: '미팅완료' })
               }
             />
             <View
@@ -205,7 +240,7 @@ export default function DBScreen() {
             />
             <BusinessCountButton
               label="통화"
-              count="0"
+              count={String(progressCounts.call)}
               onPress={() =>
                 navigation.navigate('ProgressList', { cate: '통화' })
               }
@@ -219,7 +254,7 @@ export default function DBScreen() {
             />
             <BusinessCountButton
               label="부재"
-              count="1"
+              count={String(progressCounts.absent)}
               onPress={() =>
                 navigation.navigate('ProgressList', { cate: '부재' })
               }
@@ -331,34 +366,67 @@ export default function DBScreen() {
               <CommonText labelText="변경일자" style={[styles.thText]} />
             </View>
           </View>
-          <View style={[styles.row, styles.tbody]}>
-            <View style={[styles.td, { width: (width - 40) / 4 }]}>
-              <CommonText labelText="홍길동" style={[styles.tdText]} />
+          {statusHistory.map(item => (
+            <View key={item.idx} style={[styles.row, styles.tbody]}>
+              <View style={[styles.td, { width: (width - 40) / 4 }]}>
+                <CommonText
+                  labelText={item.customerName}
+                  style={[styles.tdText]}
+                  numberOfLines={1}
+                />
+              </View>
+              <View
+                style={[
+                  styles.td,
+                  styles.row,
+                  { gap: 6, width: ((width - 40) / 4) * 2 },
+                ]}
+              >
+                <CommonText
+                  labelText={item.prevStatus}
+                  style={[
+                    styles.tdText,
+                    fonts.regular,
+                    { color: colors.gray6 },
+                  ]}
+                  numberOfLines={1}
+                />
+                <Image
+                  source={{ uri: BASE_URL + '/images/history_arr.png' }}
+                  style={{ width: 5, height: 6, resizeMode: 'contain' }}
+                />
+                <CommonText
+                  labelText={item.nextStatus}
+                  style={[styles.tdText]}
+                  numberOfLines={1}
+                />
+              </View>
+              <View style={[styles.td, { width: (width - 40) / 4 }]}>
+                <CommonText
+                  labelText={item.changedAt.slice(2, 10).replace(/-/g, '.')}
+                  style={[
+                    styles.tdText,
+                    fonts.regular,
+                    { color: colors.gray6 },
+                  ]}
+                />
+              </View>
             </View>
+          ))}
+          {statusHistory.length === 0 && (
             <View
               style={[
-                styles.td,
                 styles.row,
-                { gap: 10, width: ((width - 40) / 4) * 2 },
+                styles.tbody,
+                { justifyContent: 'center', paddingVertical: 20 },
               ]}
             >
               <CommonText
-                labelText="미팅예정"
-                style={[styles.tdText, fonts.regular, { color: colors.gray6 }]}
-              />
-              <Image
-                source={{ uri: BASE_URL + '/images/history_arr.png' }}
-                style={{ width: 5, height: 6, resizeMode: 'contain' }}
-              />
-              <CommonText labelText="가망고객" style={[styles.tdText]} />
-            </View>
-            <View style={[styles.td, { width: (width - 40) / 4 }]}>
-              <CommonText
-                labelText="26.03.16"
+                labelText="변경 이력이 없습니다."
                 style={[styles.tdText, fonts.regular, { color: colors.gray6 }]}
               />
             </View>
-          </View>
+          )}
         </View>
       </View>
     </Layout>

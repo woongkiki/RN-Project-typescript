@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import Layout from '../../components/Layout';
 import {
   FlatList,
@@ -11,9 +11,7 @@ import {
 import SubHeader from '../../components/SubHeader';
 import { MainStackParamList } from '../../navigation/types';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
-import CommonInput from '../../components/CommonInput';
 import { colors } from '../../constants/colors';
-import { useAppDimensions } from '../../hooks/useAppDimensions';
 import SearchInput from '../../components/SearchInput';
 import CommonText from '../../components/CommonText';
 import { fonts } from '../../constants/fonts';
@@ -21,91 +19,116 @@ import CategoryButton from '../../components/CategoryButton';
 import ClientBox from '../../components/ClientBox';
 import FilterBottomSheet, {
   FilterState,
+  ProgressStatus,
 } from '../../components/Filterbottomsheet';
 import { BASE_URL } from '../../api/util';
+import { getCustomers } from '../../api/customer';
+import { Customer } from '../../types';
 
 type Props = NativeStackScreenProps<MainStackParamList, 'AllList'>;
 
-type DBItem = {
-  idx: number;
-  name: string;
-  age: string;
-  gender: string;
-  address: string;
-  date?: string;
-  time?: string;
-  isView?: boolean;
+// "YYYY.MM.DD" → Date (당일 시작/끝 처리)
+const toStartOfDay = (s: string): Date => {
+  const [y, m, d] = s.split('.').map(Number);
+  return new Date(y, m - 1, d, 0, 0, 0, 0);
 };
-
-const INITIAL_MENUS: DBItem[] = [
-  {
-    idx: 1,
-    name: '홍길동',
-    age: '45세',
-    gender: '남',
-    address: '서울특별시 구로구 구로동 ㅁㅁ카페',
-    isView: false,
-  },
-  {
-    idx: 2,
-    name: '홍길동',
-    age: '45세',
-    gender: '남',
-    address: '서울특별시 구로구 구로동 ㅁㅁ카페',
-    isView: true,
-  },
-  {
-    idx: 3,
-    name: '홍길동',
-    age: '45세',
-    gender: '남',
-    address: '서울특별시 구로구 구로동 ㅁㅁ카페',
-  },
-  {
-    idx: 4,
-    name: '홍길동',
-    age: '45세',
-    gender: '남',
-    address: '서울특별시 구로구 구로동 ㅁㅁ카페',
-    isView: true,
-  },
-];
-
-// 변경 후
-const getToday = (): string => {
-  const d = new Date();
-  const yyyy = d.getFullYear();
-  const mm = String(d.getMonth() + 1).padStart(2, '0');
-  const dd = String(d.getDate()).padStart(2, '0');
-  return `${yyyy}.${mm}.${dd}`;
+const toEndOfDay = (s: string): Date => {
+  const [y, m, d] = s.split('.').map(Number);
+  return new Date(y, m - 1, d, 23, 59, 59, 999);
 };
-
-const TODAY = getToday();
 
 export default function AllList({ navigation }: Props) {
-  const { width } = useAppDimensions();
-
   const [schText, setSchText] = useState('');
-
   const [selectCategory, setSelectCategory] = useState('전체');
-  const [dbData, setDBData] = useState<DBItem[]>(INITIAL_MENUS);
-
+  const [allCustomers, setAllCustomers] = useState<Customer[]>([]);
+  const [filtered, setFiltered] = useState<Customer[]>([]);
   const [filterVisible, setFilterVisible] = useState(false);
+
+  // 시트에서 편집 중인 상태 (open 시 최신 activeFilter로 초기화됨)
   const [filter, setFilter] = useState<FilterState>({
-    startDate: TODAY,
-    endDate: TODAY,
+    startDate: '',
+    endDate: '',
     selectedStatuses: [],
   });
 
-  const renderItem = ({ item, index }: { item: DBItem; index: number }) => {
-    return (
-      <ClientBox
-        item={item}
-        isViewVisible={true}
-        onPress={() => console.log('123231')}
-        navigation={navigation}
-      />
+  // 실제 적용된 필터 (null = 필터 없음)
+  const [activeFilter, setActiveFilter] = useState<FilterState | null>(null);
+
+  const isFilterActive =
+    activeFilter !== null &&
+    (activeFilter.selectedStatuses.length > 0 ||
+      !!activeFilter.startDate ||
+      !!activeFilter.endDate);
+
+  useEffect(() => {
+    getCustomers().then(data => {
+      setAllCustomers(data);
+    });
+  }, []);
+
+  useEffect(() => {
+    let result = [...allCustomers];
+
+    // 열람/미열람 탭
+    if (selectCategory === '미열람') {
+      result = result.filter(c => c.consultStatus === '상담대기');
+    } else if (selectCategory === '열람') {
+      result = result.filter(c => c.consultStatus !== '상담대기');
+    }
+
+    // 필터 적용 (적용하기 버튼을 눌렀을 때만)
+    if (activeFilter) {
+      // 날짜 범위: 시작일·종료일 모두 입력된 경우에만 적용
+      if (activeFilter.startDate && activeFilter.endDate) {
+        const start = toStartOfDay(activeFilter.startDate);
+        const end = toEndOfDay(activeFilter.endDate);
+        result = result.filter(c => {
+          const d = new Date(c.updatedAt);
+          return d >= start && d <= end;
+        });
+      }
+
+      // 진행 상태 (다중 선택, 하나도 선택 안 하면 전체)
+      if (activeFilter.selectedStatuses.length > 0) {
+        result = result.filter(c =>
+          activeFilter.selectedStatuses.includes(
+            c.consultStatus as ProgressStatus,
+          ),
+        );
+      }
+    }
+
+    // 검색어
+    if (schText.trim()) {
+      const kw = schText.toLowerCase();
+      result = result.filter(
+        c =>
+          c.name.toLowerCase().includes(kw) ||
+          (c.address ?? '').toLowerCase().includes(kw) ||
+          (c.phone ?? '').includes(kw),
+      );
+    }
+
+    setFiltered(result);
+  }, [selectCategory, schText, allCustomers, activeFilter]);
+
+  const handleApply = (f: FilterState) => {
+    setFilter(f);
+    setActiveFilter(f);
+  };
+
+  const handleFilterOpen = () => {
+    // 시트 열 때 현재 activeFilter(또는 기본값)로 초기화
+    setFilter(
+      activeFilter ?? { startDate: '', endDate: '', selectedStatuses: [] },
     );
+    setFilterVisible(true);
+  };
+
+  const handleFilterReset = () => {
+    const defaultFilter = { startDate: '', endDate: '', selectedStatuses: [] };
+    setFilter(defaultFilter);
+    setActiveFilter(null);
   };
 
   return (
@@ -119,12 +142,9 @@ export default function AllList({ navigation }: Props) {
           value={schText}
           onChangeText={setSchText}
           placeholder="고객명, 지역을 검색하세요"
-          onSearchPress={() => {
-            // 검색 로직
-          }}
+          onSearchPress={() => {}}
         />
       </View>
-      {/* 좌우 스크롤 */}
       <ScrollView
         horizontal
         showsHorizontalScrollIndicator={false}
@@ -135,21 +155,15 @@ export default function AllList({ navigation }: Props) {
           gap: 10,
           alignItems: 'center',
         }}
-        style={{ flexGrow: 0 }} // ✅ 추가
+        style={{ flexGrow: 0 }}
       >
+        {/* 필터 버튼 — 활성 시 색상 변경 */}
         <TouchableOpacity
-          onPress={() => setFilterVisible(true)}
+          onPress={handleFilterOpen}
           style={[
             styles.row,
-            {
-              height: 36,
-              paddingHorizontal: 15,
-              borderRadius: 20,
-              backgroundColor: colors.white,
-              borderWidth: 1,
-              borderColor: colors.gray3,
-              gap: 4,
-            },
+            styles.filterBtn,
+            isFilterActive && styles.filterBtnActive,
           ]}
         >
           <Image
@@ -158,40 +172,76 @@ export default function AllList({ navigation }: Props) {
           />
           <CommonText
             labelText="필터"
-            style={[fonts.medium, { color: colors.gray8 }]}
+            style={[
+              fonts.medium,
+              { color: isFilterActive ? colors.primary : colors.gray8 },
+            ]}
           />
+          {isFilterActive && (
+            <TouchableOpacity
+              onPress={handleFilterReset}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            >
+              <Image
+                source={{ uri: BASE_URL + '/images/refresh_gray.png' }}
+                style={{
+                  width: 10,
+                  height: 10,
+                  resizeMode: 'contain',
+                  marginLeft: 2,
+                }}
+              />
+            </TouchableOpacity>
+          )}
         </TouchableOpacity>
         <View style={{ height: 24, width: 1, backgroundColor: colors.gray2 }} />
-        <CategoryButton
-          onPress={() => setSelectCategory('전체')}
-          buttonStats={selectCategory == '전체' ? true : false}
-          label="전체"
-        />
-        <CategoryButton
-          onPress={() => setSelectCategory('미열람')}
-          buttonStats={selectCategory == '미열람' ? true : false}
-          label="미열람"
-        />
-        <CategoryButton
-          onPress={() => setSelectCategory('열람')}
-          buttonStats={selectCategory == '열람' ? true : false}
-          label="열람"
-        />
+        {['전체', '미열람', '열람'].map(cat => (
+          <CategoryButton
+            key={cat}
+            onPress={() => setSelectCategory(cat)}
+            buttonStats={selectCategory === cat}
+            label={cat}
+          />
+        ))}
       </ScrollView>
 
-      {/* 좌우 스크롤 */}
+      {/* 활성 필터 요약 표시 */}
+      {isFilterActive && (
+        <View style={styles.filterSummary}>
+          <CommonText
+            labelText={`${activeFilter!.startDate} ~ ${activeFilter!.endDate}${
+              activeFilter!.selectedStatuses.length > 0
+                ? `  ·  ${activeFilter!.selectedStatuses.join(', ')}`
+                : ''
+            }`}
+            style={[fonts.medium, { fontSize: 12, color: colors.primary }]}
+            numberOfLines={1}
+          />
+        </View>
+      )}
+
       <FlatList
         style={{ flex: 1 }}
-        data={dbData}
-        renderItem={renderItem}
-        keyExtractor={(item, index) => index.toString()}
+        data={filtered}
+        renderItem={({ item }) => (
+          <ClientBox item={item} isViewVisible navigation={navigation} />
+        )}
+        keyExtractor={item => `${item.customerType}-${item.idx}`}
+        ListEmptyComponent={
+          <View style={styles.empty}>
+            <CommonText
+              labelText="조건에 맞는 고객이 없습니다."
+              style={[fonts.medium, { color: colors.gray6, fontSize: 14 }]}
+            />
+          </View>
+        }
       />
 
       <FilterBottomSheet
         visible={filterVisible}
         onClose={() => setFilterVisible(false)}
         filter={filter}
-        onApply={setFilter}
+        onApply={handleApply}
       />
     </Layout>
   );
@@ -202,20 +252,29 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
   },
-  dbText: {
-    fontSize: 15,
-    color: colors.gray7,
-  },
-  categoryButton: {
+  filterBtn: {
     height: 36,
     paddingHorizontal: 15,
     borderRadius: 20,
-    backgroundColor: colors.gray1,
+    backgroundColor: colors.white,
+    borderWidth: 1,
+    borderColor: colors.gray3,
     gap: 4,
   },
-  categoryButtonText: {
-    ...fonts.medium,
-    color: colors.gray8,
-    fontSize: 14,
+  filterBtnActive: {
+    borderColor: colors.primary2,
+    backgroundColor: colors.primary3,
+  },
+  filterSummary: {
+    marginHorizontal: 20,
+    marginBottom: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    backgroundColor: colors.primary3,
+    borderRadius: 8,
+  },
+  empty: {
+    paddingTop: 60,
+    alignItems: 'center',
   },
 });

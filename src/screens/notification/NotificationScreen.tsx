@@ -1,5 +1,6 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
+  ActivityIndicator,
   FlatList,
   Image,
   StyleSheet,
@@ -15,19 +16,10 @@ import { BASE_URL } from '../../api/util';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { MainStackParamList } from '../../navigation/types';
+import { Notification, NotificationType } from '../../types';
+import { getNotifications, markAsRead, markAllAsRead } from '../../api/notification';
 
 type NavigationProp = NativeStackNavigationProp<MainStackParamList>;
-
-type NotificationType = 'schedule' | 'db' | 'community' | 'system';
-
-interface NotificationItem {
-  idx: string;
-  type: NotificationType;
-  title: string;
-  body: string;
-  date: string;
-  isRead: boolean;
-}
 
 const TYPE_CONFIG: Record<
   NotificationType,
@@ -59,71 +51,31 @@ const TYPE_CONFIG: Record<
   },
 };
 
-const MOCK_NOTIFICATIONS: NotificationItem[] = [
-  {
-    idx: '1',
-    type: 'schedule',
-    title: '스케줄 알림',
-    body: '홍길동님과의 미팅이 2시간 후 시작됩니다.',
-    date: '2026.04.01 14:00',
-    isRead: false,
-  },
-  {
-    idx: '2',
-    type: 'db',
-    title: '새 DB 배정',
-    body: '새로운 고객 DB가 배정되었습니다. 확인해보세요.',
-    date: '2026.04.01 11:30',
-    isRead: false,
-  },
-  {
-    idx: '3',
-    type: 'community',
-    title: '커뮤니티 댓글',
-    body: '회원님의 게시글에 새 댓글이 달렸습니다.',
-    date: '2026.03.31 17:20',
-    isRead: true,
-  },
-  {
-    idx: '4',
-    type: 'schedule',
-    title: '스케줄 알림',
-    body: '김철수님과의 통화 일정이 내일 오전 10시입니다.',
-    date: '2026.03.31 09:00',
-    isRead: true,
-  },
-  {
-    idx: '5',
-    type: 'system',
-    title: '시스템 공지',
-    body: '앱이 새로운 버전으로 업데이트되었습니다.',
-    date: '2026.03.30 09:00',
-    isRead: true,
-  },
-  {
-    idx: '6',
-    type: 'db',
-    title: '진행상태 변경',
-    body: '홍길동님의 진행상태가 미팅완료로 변경되었습니다.',
-    date: '2026.03.29 15:45',
-    isRead: true,
-  },
-];
+const formatDate = (createdAt: string) =>
+  createdAt.slice(0, 16).replace('-', '.').replace('-', '.').replace(' ', ' ');
 
 export default function NotificationScreen() {
   const navigation = useNavigation<NavigationProp>();
-  const [notifications, setNotifications] =
-    useState<NotificationItem[]>(MOCK_NOTIFICATIONS);
+  const [notifications, setNotifications] = useState<Notification[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    getNotifications()
+      .then(setNotifications)
+      .finally(() => setLoading(false));
+  }, []);
 
   const unreadCount = notifications.filter(n => !n.isRead).length;
 
-  const handleRead = (idx: string) => {
+  const handleRead = (idx: number) => {
+    markAsRead(idx);
     setNotifications(prev =>
       prev.map(n => (n.idx === idx ? { ...n, isRead: true } : n)),
     );
   };
 
   const handleReadAll = () => {
+    markAllAsRead();
     setNotifications(prev => prev.map(n => ({ ...n, isRead: true })));
   };
 
@@ -131,10 +83,10 @@ export default function NotificationScreen() {
     item,
     index,
   }: {
-    item: NotificationItem;
+    item: Notification;
     index: number;
   }) => {
-    const config = TYPE_CONFIG[item.type];
+    const config = TYPE_CONFIG[item.type] ?? TYPE_CONFIG.system;
     const isLast = index === notifications.length - 1;
 
     return (
@@ -147,7 +99,6 @@ export default function NotificationScreen() {
           !isLast && styles.itemBorder,
         ]}
       >
-        {/* 아이콘 */}
         <View style={[styles.iconWrap, { backgroundColor: config.bg }]}>
           <Image
             source={{ uri: BASE_URL + config.icon }}
@@ -155,7 +106,6 @@ export default function NotificationScreen() {
           />
         </View>
 
-        {/* 내용 */}
         <View style={{ flex: 1, gap: 5 }}>
           <View style={[styles.row, { justifyContent: 'space-between' }]}>
             <View style={[styles.row, { gap: 6 }]}>
@@ -171,7 +121,7 @@ export default function NotificationScreen() {
               {!item.isRead && <View style={styles.unreadDot} />}
             </View>
             <CommonText
-              labelText={item.date}
+              labelText={formatDate(item.createdAt)}
               labelTextStyle={[{ fontSize: 11, color: colors.gray5 }]}
             />
           </View>
@@ -185,12 +135,14 @@ export default function NotificationScreen() {
               },
             ]}
           />
-          <CommonText
-            labelText={item.body}
-            labelTextStyle={[
-              { fontSize: 13, color: colors.gray6, lineHeight: 18 },
-            ]}
-          />
+          {item.message && (
+            <CommonText
+              labelText={item.message}
+              labelTextStyle={[
+                { fontSize: 13, color: colors.gray6, lineHeight: 18 },
+              ]}
+            />
+          )}
         </View>
       </TouchableOpacity>
     );
@@ -203,7 +155,6 @@ export default function NotificationScreen() {
         headerLeftOnPress={() => navigation.goBack()}
       />
 
-      {/* 상단 읽음 처리 */}
       <View
         style={[
           styles.row,
@@ -241,20 +192,24 @@ export default function NotificationScreen() {
         )}
       </View>
 
-      <FlatList
-        data={notifications}
-        keyExtractor={item => item.idx}
-        renderItem={renderItem}
-        style={{ flex: 1, backgroundColor: colors.white }}
-        ListEmptyComponent={
-          <View style={styles.emptyWrap}>
-            <CommonText
-              labelText="알림이 없습니다."
-              labelTextStyle={[{ fontSize: 15, color: colors.gray5 }]}
-            />
-          </View>
-        }
-      />
+      {loading ? (
+        <ActivityIndicator color={colors.primary} style={{ marginTop: 40 }} />
+      ) : (
+        <FlatList
+          data={notifications}
+          keyExtractor={item => String(item.idx)}
+          renderItem={renderItem}
+          style={{ flex: 1, backgroundColor: colors.white }}
+          ListEmptyComponent={
+            <View style={styles.emptyWrap}>
+              <CommonText
+                labelText="알림이 없습니다."
+                labelTextStyle={[{ fontSize: 15, color: colors.gray5 }]}
+              />
+            </View>
+          }
+        />
+      )}
     </Layout>
   );
 }

@@ -1,8 +1,9 @@
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { MainStackParamList } from '../../navigation/types';
 import Layout from '../../components/Layout';
 import {
+  ActivityIndicator,
   Image,
   Linking,
   Modal,
@@ -26,32 +27,40 @@ import {
 import WebView from 'react-native-webview';
 import { KeyboardAvoidingView } from 'react-native-keyboard-controller';
 import AudioPlayer from '../../components/AudioPlayer';
+import {
+  getCustomer,
+  getConsultLogs,
+  getConsultStatuses,
+  updateConsultStatus,
+  updateCustomerMemo,
+} from '../../api/customer';
+import { Customer, ConsultLog, ConsultStatus, ROLE_LEVEL } from '../../types';
 
 type Props = NativeStackScreenProps<MainStackParamList, 'CustomerInfo'>;
 
-const PROGRESS_STATUSES = [
-  '상담접수',
-  '통화부재',
-  '통화거절',
-  '재통화예정',
-  '미팅예정',
-  '재미팅예정',
-  '미팅완료',
-  '청약진행중',
-  '청약완료',
-  '인수거절',
-  '미팅취소',
-];
+const fmtDate = (iso: string | null | undefined) => {
+  if (!iso) {
+    return '-';
+  }
+  return iso.slice(0, 10).replace(/-/g, '/');
+};
 
-// ✅ StatusModal 내부 콘텐츠 (SafeAreaProvider 안에서 insets 사용)
+const fmtDateTime = (iso: string | null | undefined) => {
+  if (!iso) {
+    return '-';
+  }
+  return iso.slice(0, 16).replace('T', ' ');
+};
+
+// ─── 진행 상태 선택 바텀시트 ───────────────────────────────────────────────────
 const StatusModalContent = ({
-  visible,
   onClose,
+  statuses,
   progressStatus,
   onSelect,
 }: {
-  visible: boolean;
   onClose: () => void;
+  statuses: ConsultStatus[];
   progressStatus: string;
   onSelect: (status: string) => void;
 }) => {
@@ -74,11 +83,9 @@ const StatusModalContent = ({
           borderTopLeftRadius: 20,
           borderTopRightRadius: 20,
           paddingBottom: insets.bottom,
-          // ✅ 최대 높이 제한으로 스크롤 가능하게
           maxHeight: '70%',
         }}
       >
-        {/* 헤더 */}
         <View
           style={{
             alignItems: 'center',
@@ -105,14 +112,12 @@ const StatusModalContent = ({
             ]}
           />
         </View>
-
-        {/* ✅ 상태 목록 스크롤 */}
         <ScrollView bounces={false} showsVerticalScrollIndicator={false}>
-          {PROGRESS_STATUSES.map((status, index) => (
+          {statuses.map((s, index) => (
             <TouchableOpacity
-              key={status}
+              key={s.idx}
               onPress={() => {
-                onSelect(status);
+                onSelect(s.name);
                 onClose();
               }}
               style={{
@@ -121,24 +126,24 @@ const StatusModalContent = ({
                 justifyContent: 'space-between',
                 paddingHorizontal: 20,
                 paddingVertical: 16,
-                borderBottomWidth: index < PROGRESS_STATUSES.length - 1 ? 1 : 0,
+                borderBottomWidth: index < statuses.length - 1 ? 1 : 0,
                 borderBottomColor: colors.gray1,
                 backgroundColor:
-                  progressStatus === status ? colors.primary3 : colors.white,
+                  progressStatus === s.name ? colors.primary3 : colors.white,
               }}
             >
               <CommonText
-                labelText={status}
+                labelText={s.name}
                 labelTextStyle={[
                   fonts.medium,
                   { fontSize: 16 },
-                  progressStatus === status && {
+                  progressStatus === s.name && {
                     color: colors.primary,
                     ...fonts.semiBold,
                   },
                 ]}
               />
-              {progressStatus === status && (
+              {progressStatus === s.name && (
                 <Image
                   source={{ uri: BASE_URL + '/images/check_icon_blue.png' }}
                   style={{ width: 16, height: 16, resizeMode: 'contain' }}
@@ -152,7 +157,7 @@ const StatusModalContent = ({
   );
 };
 
-// ✅ MemoModal 내부 콘텐츠
+// ─── 설계사 메모 바텀시트 ──────────────────────────────────────────────────────
 const MemoModalContent = ({
   memoText,
   onChangeText,
@@ -212,11 +217,10 @@ const MemoModalContent = ({
               />
             </TouchableOpacity>
           </View>
-
           <CommonInput
             value={memoText}
             onChangeText={onChangeText}
-            placeholder={'메모를 입력하세요.'}
+            placeholder="메모를 입력하세요."
             multiline
             textAlignVertical="top"
             placeholderTextColor={colors.gray5}
@@ -232,7 +236,6 @@ const MemoModalContent = ({
               backgroundColor: colors.white,
             }}
           />
-
           <TouchableOpacity
             onPress={onSave}
             style={{
@@ -255,22 +258,95 @@ const MemoModalContent = ({
   );
 };
 
+// ─── 메인 컴포넌트 ─────────────────────────────────────────────────────────────
 export default function CustomerInfo({ route, navigation }: Props) {
-  const { idx } = route.params;
+  const { idx, customerType } = route.params;
+  const customerIdx = parseInt(idx, 10);
 
   const { top } = useSafeAreaInsets();
   const { width } = useAppDimensions();
-
   const user = useAuthStore(state => state.user);
+  const office = useAuthStore(state => state.office);
+  const isManager = office?.planCode == 'C' || office?.planCode == 'D';
+
+  const [loading, setLoading] = useState(true);
+  const [customer, setCustomer] = useState<Customer | null>(null);
+  const [consultLogs, setConsultLogs] = useState<ConsultLog[]>([]);
+  const [statuses, setStatuses] = useState<ConsultStatus[]>([]);
+
+  const [progressStatus, setProgressStatus] = useState('');
+  const [memoText, setMemoText] = useState('');
 
   const [tooltipModal, setTooltipModal] = useState(false);
-  const [memoModal, setMemoModal] = useState(false);
-  const [memoText, setMemoText] = useState('');
-  const [savedMemo, setSavedMemo] = useState(
-    '홍길동\n770723\n고객이 문자가 아닌 전화 통화를 선호함\n가족점검 요청\n빠른 통화 원함',
-  );
-  const [progressStatus, setProgressStatus] = useState('상담접수');
   const [statusModal, setStatusModal] = useState(false);
+  const [memoModal, setMemoModal] = useState(false);
+
+  useEffect(() => {
+    Promise.all([
+      getCustomer(customerType, customerIdx),
+      getConsultLogs(customerType, customerIdx),
+      getConsultStatuses(),
+    ])
+      .then(([cust, logs, stats]) => {
+        setCustomer(cust);
+        setConsultLogs(logs);
+        setStatuses(stats);
+        if (cust) {
+          setProgressStatus(cust.consultStatus);
+          setMemoText(cust.memo ?? '');
+        }
+      })
+      .finally(() => setLoading(false));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const handleStatusSelect = (status: string) => {
+    setProgressStatus(status);
+    setCustomer(prev => (prev ? { ...prev, consultStatus: status } : null));
+    updateConsultStatus(customerType, customerIdx, status);
+  };
+
+  const handleMemoSave = () => {
+    updateCustomerMemo(customerType, customerIdx, memoText);
+    setCustomer(prev => (prev ? { ...prev, memo: memoText } : null));
+    setMemoModal(false);
+  };
+
+  // 최신 상담 이력
+  const latestLog =
+    consultLogs.length > 0 ? consultLogs[consultLogs.length - 1] : null;
+
+  if (loading) {
+    return (
+      <Layout>
+        <SubHeader
+          headerLabel="고객 상세 정보"
+          headerLeftOnPress={() => navigation.goBack()}
+        />
+        <ActivityIndicator color={colors.primary} style={{ marginTop: 60 }} />
+      </Layout>
+    );
+  }
+
+  if (!customer) {
+    return (
+      <Layout>
+        <SubHeader
+          headerLabel="고객 상세 정보"
+          headerLeftOnPress={() => navigation.goBack()}
+        />
+        <View style={{ alignItems: 'center', marginTop: 60 }}>
+          <CommonText
+            labelText="고객 정보를 불러올 수 없습니다."
+            labelTextStyle={[
+              fonts.medium,
+              { fontSize: 15, color: colors.gray6 },
+            ]}
+          />
+        </View>
+      </Layout>
+    );
+  }
 
   return (
     <Layout
@@ -302,6 +378,7 @@ export default function CustomerInfo({ route, navigation }: Props) {
         />
       }
     >
+      {/* ── 기본 정보 ── */}
       <View style={[styles.infoWrap, { marginBottom: 15 }]}>
         <View
           style={{
@@ -315,162 +392,136 @@ export default function CustomerInfo({ route, navigation }: Props) {
         >
           <View style={{ gap: 16, width: width - 120 }}>
             <CommonText
-              labelText="홍길동"
-              style={[fonts.semiBold, { color: colors.gray10, fontSize: 22 }]}
+              labelText={customer.name}
+              labelTextStyle={[
+                fonts.semiBold,
+                { color: colors.gray10, fontSize: 22 },
+              ]}
             />
             <CommonText
-              labelText="010-1234-5678"
-              style={[fonts.regular, { color: colors.gray7, fontSize: 14 }]}
+              labelText={customer.phone ?? '-'}
+              labelTextStyle={[
+                fonts.regular,
+                { color: colors.gray7, fontSize: 14 },
+              ]}
             />
           </View>
-          <TouchableOpacity
-            onPress={() => Linking.openURL(`tel:010-1234-5678`)}
-            style={{
-              width: 36,
-              height: 36,
-              borderRadius: 10,
-              borderWidth: 1,
-              borderColor: '#EEF1F5',
-              alignItems: 'center',
-              justifyContent: 'center',
-              backgroundColor: '#fff',
-              shadowColor: 'rgba(174, 187, 196, 0.2)',
-              shadowOffset: { width: 1, height: 2 },
-              shadowOpacity: 3,
-              shadowRadius: 3,
-              elevation: 3,
-            }}
-          >
-            <Image
-              source={{ uri: BASE_URL + '/images/phon_icon_blue.png' }}
-              style={{ width: 16, height: 16, resizeMode: 'contain' }}
-            />
-          </TouchableOpacity>
+          {customer.phone && (
+            <TouchableOpacity
+              onPress={() => Linking.openURL(`tel:${customer.phone}`)}
+              style={styles.callButton}
+            >
+              <Image
+                source={{ uri: BASE_URL + '/images/phon_icon_blue.png' }}
+                style={{ width: 16, height: 16, resizeMode: 'contain' }}
+              />
+            </TouchableOpacity>
+          )}
         </View>
+
+        {/* 주소 / 이메일 */}
         <View style={{ paddingTop: 15 }}>
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-            <Image
-              source={{ uri: BASE_URL + '/images/birthday_icon.png' }}
-              style={{ width: 10, height: 10, resizeMode: 'contain' }}
-            />
-            <View style={{ width: width - 90 }}>
-              <CommonText
-                labelText="45세"
-                labelTextStyle={[
-                  fonts.regular,
-                  { fontSize: 13, color: colors.gray9 },
-                ]}
+          {customer.address && (
+            <View
+              style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}
+            >
+              <Image
+                source={{ uri: BASE_URL + '/images/address_icon_black.png' }}
+                style={{ width: 10, height: 10, resizeMode: 'contain' }}
               />
+              <View style={{ width: width - 90 }}>
+                <CommonText
+                  labelText={customer.address}
+                  labelTextStyle={[
+                    fonts.regular,
+                    { fontSize: 13, color: colors.gray9 },
+                  ]}
+                />
+              </View>
             </View>
-          </View>
-          <View
-            style={{
-              flexDirection: 'row',
-              alignItems: 'center',
-              gap: 8,
-              marginTop: 7,
-            }}
-          >
-            <Image
-              source={{ uri: BASE_URL + '/images/job_icon.png' }}
-              style={{ width: 10, height: 10, resizeMode: 'contain' }}
-            />
-            <View style={{ width: width - 90 }}>
-              <CommonText
-                labelText="IT엔지니어"
-                labelTextStyle={[
-                  fonts.regular,
-                  { fontSize: 13, color: colors.gray9 },
-                ]}
-              />
-            </View>
-          </View>
-          <View
-            style={{
-              flexDirection: 'row',
-              alignItems: 'center',
-              gap: 8,
-              marginTop: 7,
-            }}
-          >
-            <Image
-              source={{ uri: BASE_URL + '/images/address_icon_black.png' }}
-              style={{ width: 10, height: 10, resizeMode: 'contain' }}
-            />
-            <View style={{ width: width - 90 }}>
-              <CommonText
-                labelText="서울특별시 구로구 구로동 000-00"
-                labelTextStyle={[
-                  fonts.regular,
-                  { fontSize: 13, color: colors.gray9 },
-                ]}
-              />
-            </View>
-          </View>
-        </View>
-        <View
-          style={{
-            flexDirection: 'row',
-            gap: 5,
-            marginTop: 15,
-            paddingBottom: 15,
-            borderBottomWidth: 1,
-            borderBottomColor: colors.gray1,
-          }}
-        >
-          <View style={[styles.optionWrap]}>
-            <CommonText
-              labelText="가족상담 신청"
-              labelTextStyle={[styles.optionText]}
-            />
-          </View>
-          <View
-            style={[
-              styles.optionWrap,
-              {
-                backgroundColor: colors.subGreen,
+          )}
+          {customer.email && (
+            <View
+              style={{
                 flexDirection: 'row',
                 alignItems: 'center',
-                gap: 5,
-              },
-            ]}
-          >
-            <CommonText
-              labelText="보험료 100만"
-              labelTextStyle={[styles.optionText, { color: '#10A43C' }]}
-            />
-            <Image
-              source={{ uri: BASE_URL + '/images/price_down_arr.png' }}
-              style={{ width: 10, height: 7, resizeMode: 'contain' }}
-            />
-          </View>
+                gap: 8,
+                marginTop: 7,
+              }}
+            >
+              <Image
+                source={{ uri: BASE_URL + '/images/memo_icon.png' }}
+                style={{ width: 10, height: 10, resizeMode: 'contain' }}
+              />
+              <View style={{ width: width - 90 }}>
+                <CommonText
+                  labelText={customer.email}
+                  labelTextStyle={[
+                    fonts.regular,
+                    { fontSize: 13, color: colors.gray9 },
+                  ]}
+                />
+              </View>
+            </View>
+          )}
         </View>
+
+        {/* 상세 정보 그리드 */}
         <View style={{ flexDirection: 'row', gap: 5, flexWrap: 'wrap' }}>
+          {customer.dbGradeName && (
+            <View style={{ width: (width - 75) / 2, gap: 12, marginTop: 14 }}>
+              <CommonText
+                labelText="DB 등급"
+                labelTextStyle={[styles.infoLabel]}
+              />
+              <CommonText
+                labelText={customer.dbGradeName}
+                labelTextStyle={[styles.infoText]}
+              />
+            </View>
+          )}
           <View style={{ width: (width - 75) / 2, gap: 12, marginTop: 14 }}>
-            <CommonText labelText="DB종류" style={[styles.infoLabel]} />
-            <CommonText labelText="테스트보험" style={[styles.infoText]} />
-          </View>
-          <View style={{ width: (width - 75) / 2, gap: 12, marginTop: 14 }}>
-            <CommonText labelText="등록 일시" style={[styles.infoLabel]} />
             <CommonText
-              labelText="2021/12/32 14:25"
-              style={[styles.infoText]}
+              labelText="등록 일시"
+              labelTextStyle={[styles.infoLabel]}
+            />
+            <CommonText
+              labelText={fmtDateTime(
+                customer.distributeAt ?? customer.createdAt,
+              )}
+              labelTextStyle={[styles.infoText]}
             />
           </View>
           <View style={{ width: (width - 75) / 2, gap: 12, marginTop: 14 }}>
-            <CommonText labelText="담당 상담사" style={[styles.infoLabel]} />
-            <CommonText labelText="홍길동 상담사" style={[styles.infoText]} />
-          </View>
-          <View style={{ width: (width - 75) / 2, gap: 12, marginTop: 14 }}>
-            <CommonText labelText="통화 희망일" style={[styles.infoLabel]} />
             <CommonText
-              labelText="2022/01/01 오후"
-              style={[styles.infoText, { color: colors.primary }]}
+              labelText="담당 상담사"
+              labelTextStyle={[styles.infoLabel]}
+            />
+            <CommonText
+              labelText={customer.assignedAccountName ?? '미배정'}
+              labelTextStyle={[styles.infoText]}
             />
           </View>
+          {latestLog?.nextConsultDate && (
+            <View style={{ width: (width - 75) / 2, gap: 12, marginTop: 14 }}>
+              <CommonText
+                labelText="다음 상담일"
+                labelTextStyle={[styles.infoLabel]}
+              />
+              <CommonText
+                labelText={fmtDate(latestLog.nextConsultDate)}
+                labelTextStyle={[styles.infoText, { color: colors.primary }]}
+              />
+            </View>
+          )}
         </View>
+
+        {/* 진행 상태 */}
         <View style={{ marginTop: 15, gap: 12 }}>
-          <CommonText labelText="진행 상태" style={[styles.infoLabel]} />
+          <CommonText
+            labelText="진행 상태"
+            labelTextStyle={[styles.infoLabel]}
+          />
           <TouchableOpacity
             onPress={() => setStatusModal(true)}
             style={{
@@ -485,7 +536,7 @@ export default function CustomerInfo({ route, navigation }: Props) {
           >
             <CommonText
               labelText={progressStatus}
-              style={[fonts.medium, { fontSize: 16 }]}
+              labelTextStyle={[fonts.medium, { fontSize: 16 }]}
             />
             <Image
               source={{ uri: BASE_URL + '/images/down_tri_arr.png' }}
@@ -495,34 +546,29 @@ export default function CustomerInfo({ route, navigation }: Props) {
         </View>
       </View>
 
+      {/* ── 상담 녹취 ── */}
       <View style={[styles.infoWrap, { marginBottom: 16, gap: 10 }]}>
         <CommonText
           labelText="상담 녹취"
           labelTextStyle={[fonts.medium, { fontSize: 14 }]}
         />
         <AudioPlayer
-          url="https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3" // 샘플 URL
+          url="https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3"
           title="상담 녹취"
-          // 자막 싱크 추가 시 활용
-          onPositionChange={position => {
-            // 추후 자막 하이라이트 처리
-            // console.log('position:', position);
-          }}
+          onPositionChange={() => {}}
         />
       </View>
 
-      <View style={[styles.infoWrap, { marginBottom: 16, gap: 10 }]}>
-        <View
-          style={{
-            paddingBottom: 15,
-            borderBottomWidth: 1,
-            borderBottomColor: colors.gray1,
-            flexDirection: 'row',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-          }}
-        >
-          <View style={{ width: '100%' }}>
+      {/* ── 상담 이력 (최신 1건) ── */}
+      {latestLog && (
+        <View style={[styles.infoWrap, { marginBottom: 16, gap: 10 }]}>
+          <View
+            style={{
+              paddingBottom: 15,
+              borderBottomWidth: 1,
+              borderBottomColor: colors.gray1,
+            }}
+          >
             <View
               style={{
                 flexDirection: 'row',
@@ -535,28 +581,34 @@ export default function CustomerInfo({ route, navigation }: Props) {
                 source={{ uri: BASE_URL + '/images/memo_icon.png' }}
                 style={{ width: 14, height: 14, resizeMode: 'contain' }}
               />
-              <View style={{ width: width - 90 }}>
-                <CommonText
-                  labelText="상담사 메모"
-                  labelTextStyle={[styles.labelText]}
-                />
-              </View>
+              <CommonText
+                labelText="상담 이력"
+                labelTextStyle={[styles.labelText]}
+              />
             </View>
-            <CommonText labelText="26.02.18" style={[styles.dateText]} />
+            <CommonText
+              labelText={fmtDate(latestLog.createdAt)}
+              labelTextStyle={[styles.dateText]}
+            />
           </View>
-        </View>
-        <View>
           <CommonText
-            labelText={
-              '홍길동\n770723\n고객이 문자가 아닌 전화 통화를 선호함\n가족점검 요청\n빠른 통화 원함'
-            }
+            labelText={latestLog.content}
             labelTextStyle={[
               { fontSize: 15, lineHeight: 21, color: colors.gray9 },
             ]}
           />
+          {latestLog.memo && (
+            <CommonText
+              labelText={latestLog.memo}
+              labelTextStyle={[
+                { fontSize: 13, lineHeight: 19, color: colors.gray6 },
+              ]}
+            />
+          )}
         </View>
-      </View>
+      )}
 
+      {/* ── 설계사 메모 ── */}
       <View style={[styles.infoWrap, { marginBottom: 16, gap: 10 }]}>
         <View
           style={{
@@ -581,18 +633,19 @@ export default function CustomerInfo({ route, navigation }: Props) {
                 source={{ uri: BASE_URL + '/images/memo_icon.png' }}
                 style={{ width: 14, height: 14, resizeMode: 'contain' }}
               />
-              <View style={{ width: width - 180 }}>
-                <CommonText
-                  labelText="설계사 메모"
-                  labelTextStyle={[styles.labelText]}
-                />
-              </View>
+              <CommonText
+                labelText="설계사 메모"
+                labelTextStyle={[styles.labelText]}
+              />
             </View>
-            <CommonText labelText="26.02.18" style={[styles.dateText]} />
+            <CommonText
+              labelText={fmtDate(customer.updatedAt)}
+              labelTextStyle={[styles.dateText]}
+            />
           </View>
           <TouchableOpacity
             onPress={() => {
-              setMemoText(savedMemo);
+              setMemoText(customer.memo ?? '');
               setMemoModal(true);
             }}
             style={{
@@ -615,58 +668,53 @@ export default function CustomerInfo({ route, navigation }: Props) {
             />
           </TouchableOpacity>
         </View>
-        <View>
-          <CommonText
-            labelText={savedMemo}
-            labelTextStyle={[
-              { fontSize: 15, lineHeight: 21, color: colors.gray9 },
-            ]}
-          />
-        </View>
+        <CommonText
+          labelText={customer.memo ?? '메모가 없습니다.'}
+          labelTextStyle={[
+            { fontSize: 15, lineHeight: 21 },
+            customer.memo ? { color: colors.gray9 } : { color: colors.gray5 },
+          ]}
+        />
       </View>
 
-      {(user?.grade ?? 0) > 2 && (
+      {/* ── 스케줄 (매니저 이상만) ── */}
+      {isManager && (
         <View style={[styles.infoWrap, { marginBottom: 16, gap: 10 }]}>
           <View
             style={{
               paddingBottom: 15,
               borderBottomWidth: 1,
               borderBottomColor: colors.gray1,
-              flexDirection: 'row',
-              alignItems: 'center',
-              justifyContent: 'space-between',
             }}
           >
-            <View style={{ width: '100%' }}>
-              <View
-                style={{
-                  flexDirection: 'row',
-                  alignItems: 'center',
-                  gap: 7,
-                }}
-              >
-                <Image
-                  source={{ uri: BASE_URL + '/images/calendar_black.png' }}
-                  style={{ width: 14, height: 14, resizeMode: 'contain' }}
-                />
-                <View style={{ width: width - 90 }}>
-                  <CommonText
-                    labelText="스케줄"
-                    labelTextStyle={[styles.labelText]}
-                  />
-                </View>
-              </View>
+            <View
+              style={{ flexDirection: 'row', alignItems: 'center', gap: 7 }}
+            >
+              <Image
+                source={{ uri: BASE_URL + '/images/calendar_black.png' }}
+                style={{ width: 14, height: 14, resizeMode: 'contain' }}
+              />
+              <CommonText
+                labelText="스케줄"
+                labelTextStyle={[styles.labelText]}
+              />
             </View>
           </View>
           <View style={{ gap: 10 }}>
             <CommonText
-              labelText="홍길동님과 통화"
-              style={[fonts.semiBold, { fontSize: 16, color: colors.gray10 }]}
+              labelText={`${customer.name}님과 통화`}
+              labelTextStyle={[
+                fonts.semiBold,
+                { fontSize: 16, color: colors.gray10 },
+              ]}
             />
             <View style={{ flexDirection: 'row', alignItems: 'center' }}>
               <CommonText
-                labelText="2026.03.16"
-                style={[fonts.regular, { fontSize: 12, color: colors.primary }]}
+                labelText={fmtDate(latestLog?.nextConsultDate)}
+                labelTextStyle={[
+                  fonts.regular,
+                  { fontSize: 12, color: colors.primary },
+                ]}
               />
               <View
                 style={{
@@ -678,32 +726,33 @@ export default function CustomerInfo({ route, navigation }: Props) {
               />
               <CommonText
                 labelText="10:00 AM"
-                style={[fonts.regular, { fontSize: 12, color: colors.primary }]}
+                labelTextStyle={[
+                  fonts.regular,
+                  { fontSize: 12, color: colors.primary },
+                ]}
               />
             </View>
-            <View
-              style={{
-                flexDirection: 'row',
-                alignItems: 'center',
-                gap: 5,
-              }}
-            >
-              <Image
-                source={{ uri: BASE_URL + '/images/address_icon_gray.png' }}
-                style={{ width: 10, height: 10, resizeMode: 'contain' }}
-              />
-              <View style={{ width: width - 90 }}>
-                <CommonText
-                  labelText="서울특별시 구로구 구로동 000-00"
-                  labelTextStyle={[
-                    fonts.regular,
-                    { fontSize: 13, color: colors.gray7 },
-                  ]}
+            {customer.address && (
+              <View
+                style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}
+              >
+                <Image
+                  source={{ uri: BASE_URL + '/images/address_icon_gray.png' }}
+                  style={{ width: 10, height: 10, resizeMode: 'contain' }}
                 />
+                <View style={{ width: width - 90 }}>
+                  <CommonText
+                    labelText={customer.address}
+                    labelTextStyle={[
+                      fonts.regular,
+                      { fontSize: 13, color: colors.gray7 },
+                    ]}
+                  />
+                </View>
               </View>
-            </View>
+            )}
           </View>
-          <View style={[styles.mapWrap]}>
+          <View style={styles.mapWrap}>
             <WebView
               source={{ uri: BASE_URL + '/map.html' }}
               style={{ flex: 1, borderRadius: 8 }}
@@ -715,7 +764,7 @@ export default function CustomerInfo({ route, navigation }: Props) {
         </View>
       )}
 
-      {/* ✅ 진행 상태 모달 */}
+      {/* ── 진행 상태 모달 ── */}
       <Modal
         visible={statusModal}
         transparent
@@ -724,15 +773,15 @@ export default function CustomerInfo({ route, navigation }: Props) {
       >
         <SafeAreaProvider>
           <StatusModalContent
-            visible={statusModal}
             onClose={() => setStatusModal(false)}
+            statuses={statuses}
             progressStatus={progressStatus}
-            onSelect={status => setProgressStatus(status)}
+            onSelect={handleStatusSelect}
           />
         </SafeAreaProvider>
       </Modal>
 
-      {/* ✅ 툴팁 모달 (insets 직접 사용 - 위치 고정이라 SafeAreaProvider 불필요) */}
+      {/* ── 툴팁 모달 ── */}
       <Modal
         visible={tooltipModal}
         transparent
@@ -784,7 +833,7 @@ export default function CustomerInfo({ route, navigation }: Props) {
         </TouchableOpacity>
       </Modal>
 
-      {/* ✅ 메모 모달 */}
+      {/* ── 메모 모달 ── */}
       <Modal
         visible={memoModal}
         transparent
@@ -796,10 +845,7 @@ export default function CustomerInfo({ route, navigation }: Props) {
             memoText={memoText}
             onChangeText={setMemoText}
             onClose={() => setMemoModal(false)}
-            onSave={() => {
-              setSavedMemo(memoText);
-              setMemoModal(false);
-            }}
+            onSave={handleMemoSave}
           />
         </SafeAreaProvider>
       </Modal>
@@ -819,16 +865,20 @@ const styles = StyleSheet.create({
     shadowRadius: 8,
     elevation: 3,
   },
-  optionWrap: {
-    paddingVertical: 10,
-    paddingHorizontal: 12,
-    borderRadius: 20,
-    backgroundColor: colors.primary3,
-  },
-  optionText: {
-    fontSize: 12,
-    ...fonts.semiBold,
-    color: '#0480D8',
+  callButton: {
+    width: 36,
+    height: 36,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#EEF1F5',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#fff',
+    shadowColor: 'rgba(174, 187, 196, 0.2)',
+    shadowOffset: { width: 1, height: 2 },
+    shadowOpacity: 3,
+    shadowRadius: 3,
+    elevation: 3,
   },
   infoLabel: {
     fontSize: 12,

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   View,
   Text,
@@ -13,6 +13,7 @@ import {
   Keyboard,
   Image,
 } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { loginApi } from '../../api/auth';
 import { useAuthStore } from '../../store';
 import Layout from '../../components/Layout';
@@ -24,14 +25,26 @@ import CommonText from '../../components/CommonText';
 import { RootStackParamList } from '../../navigation/types';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 
+const SAVED_ID_KEY = 'saved_login_id';
+
 type Props = NativeStackScreenProps<RootStackParamList, 'AuthScreen'>;
 
 export default function LoginScreen({ navigation }: Props) {
-  const setAuth = useAuthStore(state => state.setAuth); // ← 변경
+  const setAuth = useAuthStore(state => state.setAuth);
   const [id, setId] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [idSave, setIdSave] = useState(false);
+
+  // 저장된 아이디 불러오기
+  useEffect(() => {
+    AsyncStorage.getItem(SAVED_ID_KEY).then(saved => {
+      if (saved) {
+        setId(saved);
+        setIdSave(true);
+      }
+    });
+  }, []);
 
   const handleLogin = async () => {
     if (!id || !password) {
@@ -40,22 +53,26 @@ export default function LoginScreen({ navigation }: Props) {
     }
     try {
       setLoading(true);
-      const { user, token, brandConfig, firstlogin } = await loginApi(
-        id,
-        password,
-      );
+      const { user, token, firstlogin } = await loginApi(id, password);
 
-      // console.log(id, firstlogin);
+      const { office } = user;
+
+      // 아이디 저장 처리
+      if (idSave) {
+        await AsyncStorage.setItem(SAVED_ID_KEY, id);
+      } else {
+        await AsyncStorage.removeItem(SAVED_ID_KEY);
+      }
 
       if (firstlogin) {
-        // 최초 로그인 → 비밀번호 변경 화면으로
-        navigation.navigate('FirstLogin', { user, token, brandConfig });
+        navigation.navigate('FirstLogin', { user, token, office });
       } else {
-        // 일반 로그인 → 메인으로
-        setAuth(user, token, brandConfig);
+        setAuth(user, token, office);
       }
     } catch (e) {
-      Alert.alert('오류', '로그인에 실패했습니다.');
+      console.log('login', e);
+      const message = e instanceof Error ? e.message : '로그인에 실패했습니다.';
+      Alert.alert('로그인에 실패했습니다.', message);
     } finally {
       setLoading(false);
     }
@@ -113,37 +130,6 @@ export default function LoginScreen({ navigation }: Props) {
         disabled={loading}
         loading={loading}
       />
-      {/* <View
-        style={{
-          flexDirection: 'row',
-          alignItems: 'center',
-          justifyContent: 'center',
-          gap: 12,
-          marginTop: 24,
-        }}
-      >
-        <TouchableOpacity>
-          <CommonText
-            labelText="아이디 찾기"
-            labelTextStyle={[styles.registerButtonText]}
-          />
-        </TouchableOpacity>
-        <View style={[styles.bar]} />
-        <TouchableOpacity>
-          <CommonText
-            labelText="비밀번호 찾기"
-            labelTextStyle={[styles.registerButtonText]}
-          />
-        </TouchableOpacity>
-        <View style={[styles.bar]} />
-
-        <TouchableOpacity>
-          <CommonText
-            labelText="회원가입"
-            labelTextStyle={[styles.registerButtonText]}
-          />
-        </TouchableOpacity>
-      </View> */}
     </Layout>
   );
 }

@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import Layout from '../../components/Layout';
-import { Image, StyleSheet, View } from 'react-native';
+import { Alert, Image, StyleSheet, View } from 'react-native';
 import CommonText from '../../components/CommonText';
 import { fonts } from '../../constants/fonts';
 import { colors } from '../../constants/colors';
@@ -10,20 +10,41 @@ import CommonButton from '../../components/CommonButton';
 import { RootStackParamList } from '../../navigation/types';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useAuthStore } from '../../store';
+import { updateMyInfoApi } from '../../api/auth';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'FirstLogin'>;
 
 export default function FirstLoginScreen({ route }: Props) {
-  const { user, token, brandConfig } = route.params;
+  const { user, token, office } = route.params;
   const setAuth = useAuthStore(state => state.setAuth);
 
   const [loading, setLoading] = useState(false);
   const [password, setPassword] = useState('');
   const [rePassowrd, setRePassword] = useState('');
 
-  const handleConfirm = () => {
-    // TODO: 비밀번호 변경 API 호출
-    setAuth(user, token, brandConfig); // → RootNavigator가 MainNavigator로 전환
+  const handleConfirm = async () => {
+    if (!password) {
+      Alert.alert('알림', '비밀번호를 입력해주세요.');
+      return;
+    }
+    if (password.length < 8) {
+      Alert.alert('알림', '비밀번호는 8자리 이상 입력해주세요.');
+      return;
+    }
+    if (password !== rePassowrd) {
+      Alert.alert('알림', '비밀번호가 일치하지 않습니다.');
+      return;
+    }
+    try {
+      setLoading(true);
+      await updateMyInfoApi({ password }, token);
+      setAuth(user, token, office);
+    } catch (e) {
+      const message = e instanceof Error ? e.message : '비밀번호 변경에 실패했습니다.';
+      Alert.alert('오류', message);
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
