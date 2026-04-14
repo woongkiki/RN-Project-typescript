@@ -1,4 +1,4 @@
-# InsuranceCNJ
+# InsightCore
 
 보험 설계사용 업무 지원 앱 (React Native)
 
