@@ -1,8 +1,8 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { MainStackParamList } from '../../navigation/types';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import Layout from '../../components/Layout';
-import { FlatList, Image, StyleSheet, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, FlatList, Image, StyleSheet, TouchableOpacity, View } from 'react-native';
 import { useAppDimensions } from '../../hooks/useAppDimensions';
 import SubHeader from '../../components/SubHeader';
 import CommonText from '../../components/CommonText';
@@ -22,6 +22,8 @@ import {
 import { BoardCategory, BoardPostItem, EducationVideoItem } from '../../types';
 
 type Props = NativeStackScreenProps<MainStackParamList, 'EducationScreen'>;
+
+const PAGE_LIMIT = 15;
 
 const toDate = (iso: string | null | undefined) => iso?.slice(0, 10).replace(/-/g, '.') ?? '';
 
@@ -47,21 +49,95 @@ export default function EducationScreen({ route, navigation }: Props) {
   const [videoData, setVideoData] = useState<EducationVideoItem[]>([]);
   const [docData, setDocData] = useState<BoardPostItem[]>([]);
 
+  // 탭별 페이지 상태
+  const [videoPage, setVideoPage] = useState(1);
+  const [videoTotal, setVideoTotal] = useState(0);
+  const [videoLoading, setVideoLoading] = useState(false);
+
+  const [docPage, setDocPage] = useState(1);
+  const [docTotal, setDocTotal] = useState(0);
+  const [docLoading, setDocLoading] = useState(false);
+
+  const videoFetchingRef = useRef(false);
+  const docFetchingRef = useRef(false);
+
   // 카테고리 로드
   useEffect(() => {
     getVideoCategoriesForEducation().then(setVideoCategories);
     getDocCategoriesForEducation().then(setDocCategories);
   }, []);
 
-  // 동영상 탭 데이터 로드
-  useEffect(() => {
-    getEducationVideos({ categoryIdx: tab1CategoryIdx, keyword: tab === 'tab1' ? schText : undefined }).then(setVideoData);
+  // 동영상 탭 fetch
+  const fetchVideos = useCallback(async (targetPage: number, reset: boolean) => {
+    if (videoFetchingRef.current) return;
+    videoFetchingRef.current = true;
+    setVideoLoading(true);
+    try {
+      const res = await getEducationVideos({
+        categoryIdx: tab1CategoryIdx,
+        keyword: tab === 'tab1' ? schText : undefined,
+        page: targetPage,
+        limit: PAGE_LIMIT,
+      });
+      setVideoTotal(res.total);
+      setVideoData(prev => (reset ? res.videos : [...prev, ...res.videos]));
+      setVideoPage(targetPage);
+    } catch (e: any) {
+      console.log('[videos error]', e?.message);
+    } finally {
+      videoFetchingRef.current = false;
+      setVideoLoading(false);
+    }
   }, [tab1CategoryIdx, schText, tab]);
 
-  // 교육자료 탭 데이터 로드
-  useEffect(() => {
-    getEducationDocs({ categoryIdx: tab2CategoryIdx, keyword: tab === 'tab2' ? schText : undefined }).then(setDocData);
+  // 교육자료 탭 fetch
+  const fetchDocs = useCallback(async (targetPage: number, reset: boolean) => {
+    if (docFetchingRef.current) return;
+    docFetchingRef.current = true;
+    setDocLoading(true);
+    try {
+      const res = await getEducationDocs({
+        categoryIdx: tab2CategoryIdx,
+        keyword: tab === 'tab2' ? schText : undefined,
+        page: targetPage,
+        limit: PAGE_LIMIT,
+      });
+      setDocTotal(res.total);
+      setDocData(prev => (reset ? res.docs : [...prev, ...res.docs]));
+      setDocPage(targetPage);
+    } catch (e: any) {
+      console.log('[docs error]', e?.message);
+    } finally {
+      docFetchingRef.current = false;
+      setDocLoading(false);
+    }
   }, [tab2CategoryIdx, schText, tab]);
+
+  // 동영상 탭 의존성 변경 시 재로드
+  useEffect(() => {
+    fetchVideos(1, true);
+  }, [fetchVideos]);
+
+  // 교육자료 탭 의존성 변경 시 재로드
+  useEffect(() => {
+    fetchDocs(1, true);
+  }, [fetchDocs]);
+
+  const handleLoadMore = () => {
+    if (tab === 'tab1') {
+      const hasMore = videoData.length < videoTotal;
+      if (!videoLoading && hasMore) {
+        fetchVideos(videoPage + 1, false);
+      }
+    } else {
+      const hasMore = docData.length < docTotal;
+      if (!docLoading && hasMore) {
+        fetchDocs(docPage + 1, false);
+      }
+    }
+  };
+
+  const isLoading = tab === 'tab1' ? videoLoading : docLoading;
 
   // 현재 탭 기준 카테고리 목록 (모달용)
   const currentCategories = (tab === 'tab1' ? videoCategories : docCategories).map(c => c.name);
@@ -109,6 +185,15 @@ export default function EducationScreen({ route, navigation }: Props) {
   const renderItem = ({ item, index }: { item: ListItem; index: number }) => {
     if (tab === 'tab1') return videoRenderItem({ item: item as EducationVideoItem, index });
     return docRenderItem({ item: item as BoardPostItem });
+  };
+
+  const renderFooter = () => {
+    if (!isLoading) return null;
+    return (
+      <View style={{ paddingVertical: 16, alignItems: 'center' }}>
+        <ActivityIndicator size="small" color={colors.primary} />
+      </View>
+    );
   };
 
   return (
@@ -169,10 +254,15 @@ export default function EducationScreen({ route, navigation }: Props) {
         data={tab === 'tab1' ? videoData : docData}
         renderItem={renderItem}
         keyExtractor={item => item.idx.toString()}
+        onEndReached={handleLoadMore}
+        onEndReachedThreshold={0.3}
+        ListFooterComponent={renderFooter}
         ListEmptyComponent={
-          <View style={{ flex: 1, alignItems: 'center', marginTop: 60 }}>
-            <CommonText labelText="게시글이 없습니다" labelTextStyle={{ color: '#999', fontSize: 14 }} />
-          </View>
+          !isLoading ? (
+            <View style={{ flex: 1, alignItems: 'center', marginTop: 60 }}>
+              <CommonText labelText="게시글이 없습니다" labelTextStyle={{ color: '#999', fontSize: 14 }} />
+            </View>
+          ) : null
         }
       />
 
