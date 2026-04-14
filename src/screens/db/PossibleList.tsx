@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import Layout from '../../components/Layout';
-import { FlatList, StyleSheet, View } from 'react-native';
+import { ActivityIndicator, FlatList, StyleSheet, View } from 'react-native';
 import SubHeader from '../../components/SubHeader';
 import { MainStackParamList } from '../../navigation/types';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
@@ -14,37 +14,52 @@ import { Customer } from '../../types';
 
 type Props = NativeStackScreenProps<MainStackParamList, 'PossibleList'>;
 
+const DISPLAY_LIMIT = 20;
+
 export default function PossibleList({ navigation }: Props) {
   const [schText, setSchText] = useState('');
-  const [customers, setCustomers] = useState<Customer[]>([]);
+  const [allCustomers, setAllCustomers] = useState<Customer[]>([]);
   const [filtered, setFiltered] = useState<Customer[]>([]);
+  const [displayCount, setDisplayCount] = useState(DISPLAY_LIMIT);
 
   useEffect(() => {
     getCustomers({ consultStatus: '상담대기' }).then(data => {
-      setCustomers(data);
+      setAllCustomers(data);
       setFiltered(data);
     });
   }, []);
 
-  const handleSearch = () => {
+  useEffect(() => {
     if (!schText.trim()) {
-      setFiltered(customers);
-      return;
+      setFiltered(allCustomers);
+    } else {
+      const kw = schText.toLowerCase();
+      setFiltered(
+        allCustomers.filter(
+          c =>
+            c.name.toLowerCase().includes(kw) ||
+            (c.address ?? '').toLowerCase().includes(kw) ||
+            (c.phone ?? '').includes(kw),
+        ),
+      );
     }
-    const kw = schText.toLowerCase();
-    setFiltered(
-      customers.filter(
-        c =>
-          c.name.toLowerCase().includes(kw) ||
-          (c.address ?? '').toLowerCase().includes(kw) ||
-          (c.phone ?? '').includes(kw),
-      ),
-    );
+    setDisplayCount(DISPLAY_LIMIT);
+  }, [schText, allCustomers]);
+
+  const handleLoadMore = () => {
+    if (displayCount < filtered.length) {
+      setDisplayCount(prev => prev + DISPLAY_LIMIT);
+    }
   };
 
-  useEffect(() => {
-    if (!schText.trim()) setFiltered(customers);
-  }, [schText, customers]);
+  const renderFooter = () => {
+    if (displayCount >= filtered.length) return null;
+    return (
+      <View style={{ paddingVertical: 16, alignItems: 'center' }}>
+        <ActivityIndicator size="small" color={colors.primary} />
+      </View>
+    );
+  };
 
   return (
     <Layout>
@@ -57,16 +72,19 @@ export default function PossibleList({ navigation }: Props) {
           value={schText}
           onChangeText={setSchText}
           placeholder="고객명, 지역을 검색하세요"
-          onSearchPress={handleSearch}
+          onSearchPress={() => {}}
         />
       </View>
       <FlatList
         style={{ flex: 1 }}
-        data={filtered}
+        data={filtered.slice(0, displayCount)}
         renderItem={({ item }) => (
           <ClientBox item={item} navigation={navigation} />
         )}
         keyExtractor={item => `${item.customerType}-${item.idx}`}
+        onEndReached={handleLoadMore}
+        onEndReachedThreshold={0.3}
+        ListFooterComponent={renderFooter}
         ListEmptyComponent={
           <View style={styles.empty}>
             <CommonText

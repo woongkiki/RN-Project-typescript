@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import Layout from '../../components/Layout';
 import {
+  ActivityIndicator,
   FlatList,
   Image,
   ScrollView,
@@ -27,6 +28,8 @@ import { Customer } from '../../types';
 
 type Props = NativeStackScreenProps<MainStackParamList, 'AllList'>;
 
+const DISPLAY_LIMIT = 20;
+
 // "YYYY.MM.DD" → Date (당일 시작/끝 처리)
 const toStartOfDay = (s: string): Date => {
   const [y, m, d] = s.split('.').map(Number);
@@ -42,16 +45,15 @@ export default function AllList({ navigation }: Props) {
   const [selectCategory, setSelectCategory] = useState('전체');
   const [allCustomers, setAllCustomers] = useState<Customer[]>([]);
   const [filtered, setFiltered] = useState<Customer[]>([]);
+  const [displayCount, setDisplayCount] = useState(DISPLAY_LIMIT);
   const [filterVisible, setFilterVisible] = useState(false);
 
-  // 시트에서 편집 중인 상태 (open 시 최신 activeFilter로 초기화됨)
   const [filter, setFilter] = useState<FilterState>({
     startDate: '',
     endDate: '',
     selectedStatuses: [],
   });
 
-  // 실제 적용된 필터 (null = 필터 없음)
   const [activeFilter, setActiveFilter] = useState<FilterState | null>(null);
 
   const isFilterActive =
@@ -69,16 +71,13 @@ export default function AllList({ navigation }: Props) {
   useEffect(() => {
     let result = [...allCustomers];
 
-    // 열람/미열람 탭
     if (selectCategory === '미열람') {
       result = result.filter(c => c.consultStatus === '상담대기');
     } else if (selectCategory === '열람') {
       result = result.filter(c => c.consultStatus !== '상담대기');
     }
 
-    // 필터 적용 (적용하기 버튼을 눌렀을 때만)
     if (activeFilter) {
-      // 날짜 범위: 시작일·종료일 모두 입력된 경우에만 적용
       if (activeFilter.startDate && activeFilter.endDate) {
         const start = toStartOfDay(activeFilter.startDate);
         const end = toEndOfDay(activeFilter.endDate);
@@ -88,7 +87,6 @@ export default function AllList({ navigation }: Props) {
         });
       }
 
-      // 진행 상태 (다중 선택, 하나도 선택 안 하면 전체)
       if (activeFilter.selectedStatuses.length > 0) {
         result = result.filter(c =>
           activeFilter.selectedStatuses.includes(
@@ -98,7 +96,6 @@ export default function AllList({ navigation }: Props) {
       }
     }
 
-    // 검색어
     if (schText.trim()) {
       const kw = schText.toLowerCase();
       result = result.filter(
@@ -110,7 +107,14 @@ export default function AllList({ navigation }: Props) {
     }
 
     setFiltered(result);
+    setDisplayCount(DISPLAY_LIMIT); // 필터 변경 시 표시 초기화
   }, [selectCategory, schText, allCustomers, activeFilter]);
+
+  const handleLoadMore = () => {
+    if (displayCount < filtered.length) {
+      setDisplayCount(prev => prev + DISPLAY_LIMIT);
+    }
+  };
 
   const handleApply = (f: FilterState) => {
     setFilter(f);
@@ -118,7 +122,6 @@ export default function AllList({ navigation }: Props) {
   };
 
   const handleFilterOpen = () => {
-    // 시트 열 때 현재 activeFilter(또는 기본값)로 초기화
     setFilter(
       activeFilter ?? { startDate: '', endDate: '', selectedStatuses: [] },
     );
@@ -129,6 +132,15 @@ export default function AllList({ navigation }: Props) {
     const defaultFilter = { startDate: '', endDate: '', selectedStatuses: [] };
     setFilter(defaultFilter);
     setActiveFilter(null);
+  };
+
+  const renderFooter = () => {
+    if (displayCount >= filtered.length) return null;
+    return (
+      <View style={{ paddingVertical: 16, alignItems: 'center' }}>
+        <ActivityIndicator size="small" color={colors.primary} />
+      </View>
+    );
   };
 
   return (
@@ -157,7 +169,6 @@ export default function AllList({ navigation }: Props) {
         }}
         style={{ flexGrow: 0 }}
       >
-        {/* 필터 버튼 — 활성 시 색상 변경 */}
         <TouchableOpacity
           onPress={handleFilterOpen}
           style={[
@@ -205,7 +216,6 @@ export default function AllList({ navigation }: Props) {
         ))}
       </ScrollView>
 
-      {/* 활성 필터 요약 표시 */}
       {isFilterActive && (
         <View style={styles.filterSummary}>
           <CommonText
@@ -222,11 +232,14 @@ export default function AllList({ navigation }: Props) {
 
       <FlatList
         style={{ flex: 1 }}
-        data={filtered}
+        data={filtered.slice(0, displayCount)}
         renderItem={({ item }) => (
           <ClientBox item={item} isViewVisible navigation={navigation} />
         )}
         keyExtractor={item => `${item.customerType}-${item.idx}`}
+        onEndReached={handleLoadMore}
+        onEndReachedThreshold={0.3}
+        ListFooterComponent={renderFooter}
         ListEmptyComponent={
           <View style={styles.empty}>
             <CommonText
