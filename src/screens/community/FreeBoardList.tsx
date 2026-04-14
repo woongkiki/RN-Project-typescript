@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { FlatList, ScrollView, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, FlatList, ScrollView, TouchableOpacity, View } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import Layout from '../../components/Layout';
 import SubHeader from '../../components/SubHeader';
@@ -16,6 +16,8 @@ import { BoardCategory, BoardPostItem } from '../../types';
 
 type Props = NativeStackScreenProps<MainStackParamList, 'FreeBoardList'>;
 
+const PAGE_LIMIT = 15;
+
 const toDate = (iso: string | null | undefined) => iso?.slice(0, 10).replace(/-/g, '.') ?? '';
 
 export default function FreeBoardList({ navigation }: Props) {
@@ -23,31 +25,62 @@ export default function FreeBoardList({ navigation }: Props) {
   const [categories, setCategories] = useState<BoardCategory[]>([]);
   const [selectedCategoryIdx, setSelectedCategoryIdx] = useState<number | null>(null);
   const [posts, setPosts] = useState<BoardPostItem[]>([]);
+  const [page, setPage] = useState(1);
+  const [total, setTotal] = useState(0);
+  const [isLoading, setIsLoading] = useState(false);
+  const [isRefreshing, setIsRefreshing] = useState(false);
 
   const scrollViewRef = useRef<ScrollView>(null);
   const itemPositions = useRef<Partial<Record<number | 'all', number>>>({});
+  const isFetchingRef = useRef(false);
 
   useEffect(() => {
     getBoardCategories('free').then(setCategories);
   }, []);
 
-  const fetchPosts = useCallback(() => {
-    getBoardPosts({
-      boardType: 'free',
-      categoryIdx: selectedCategoryIdx,
-      keyword: schText,
-    }).then(res => setPosts(res.posts));
+  const fetchPosts = useCallback(async (targetPage: number, reset: boolean) => {
+    if (isFetchingRef.current) return;
+    isFetchingRef.current = true;
+    if (reset) {
+      setIsRefreshing(true);
+    } else {
+      setIsLoading(true);
+    }
+    try {
+      const res = await getBoardPosts({
+        boardType: 'free',
+        categoryIdx: selectedCategoryIdx,
+        keyword: schText,
+        page: targetPage,
+        limit: PAGE_LIMIT,
+      });
+      setTotal(res.total);
+      setPosts(prev => (reset ? res.posts : [...prev, ...res.posts]));
+      setPage(targetPage);
+    } finally {
+      isFetchingRef.current = false;
+      setIsLoading(false);
+      setIsRefreshing(false);
+    }
   }, [selectedCategoryIdx, schText]);
 
+  // 카테고리/검색어 변경 시 처음부터 다시 로드
   useEffect(() => {
-    fetchPosts();
+    fetchPosts(1, true);
   }, [fetchPosts]);
 
   useFocusEffect(
     useCallback(() => {
-      fetchPosts();
+      fetchPosts(1, true);
     }, [fetchPosts]),
   );
+
+  const handleLoadMore = () => {
+    const hasMore = posts.length < total;
+    if (!isLoading && !isRefreshing && hasMore) {
+      fetchPosts(page + 1, false);
+    }
+  };
 
   const handleCategorySelect = (idx: number | null) => {
     setSelectedCategoryIdx(idx);
@@ -66,6 +99,15 @@ export default function FreeBoardList({ navigation }: Props) {
       />
     </View>
   );
+
+  const renderFooter = () => {
+    if (!isLoading) return null;
+    return (
+      <View style={{ paddingVertical: 16, alignItems: 'center' }}>
+        <ActivityIndicator size="small" color={colors.primary} />
+      </View>
+    );
+  };
 
   return (
     <Layout edges={['top', 'bottom']} behavior={undefined}>
@@ -112,10 +154,15 @@ export default function FreeBoardList({ navigation }: Props) {
         data={posts}
         renderItem={renderItem}
         keyExtractor={item => item.idx.toString()}
+        onEndReached={handleLoadMore}
+        onEndReachedThreshold={0.3}
+        ListFooterComponent={renderFooter}
         ListEmptyComponent={
-          <View style={{ flex: 1, alignItems: 'center', marginTop: 60 }}>
-            <CommonText labelText="게시글이 없습니다" labelTextStyle={{ color: '#999', fontSize: 14 }} />
-          </View>
+          !isRefreshing ? (
+            <View style={{ flex: 1, alignItems: 'center', marginTop: 60 }}>
+              <CommonText labelText="게시글이 없습니다" labelTextStyle={{ color: '#999', fontSize: 14 }} />
+            </View>
+          ) : null
         }
       />
 

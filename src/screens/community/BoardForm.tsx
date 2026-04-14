@@ -113,7 +113,7 @@ export default function BoardForm({ navigation }: Props) {
         content: content.trim(),
         file: fileData
           ? {
-              uri: fileData.fileCopyUri ?? fileData.uri ?? '',
+              uri: fileData.uri ?? fileData.uri ?? '',
               name: fileData.name ?? '',
               type: fileData.type ?? 'application/octet-stream',
             }
