@@ -177,7 +177,7 @@ export async function getProgressCounts(): Promise<ProgressCounts> {
   return mapProgressCounts(data);
 }
 
-/** 고객 목록 조회 */
+/** 고객 목록 조회 (전체, 하위 호환용 — limit 미지정 시 10000으로 요청) */
 export async function getCustomers(params?: {
   keyword?: string;
   consultStatus?: string;
@@ -189,6 +189,8 @@ export async function getCustomers(params?: {
   if (params?.keyword) query.set('keyword', params.keyword);
   if (params?.consultStatus) query.set('consultStatus', params.consultStatus);
   if (params?.assignedAccountIdx) query.set('assignedAccountIdx', String(params.assignedAccountIdx));
+  query.set('page', '1');
+  query.set('limit', '10000');
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const data = await customerFetch<any>(
@@ -196,6 +198,40 @@ export async function getCustomers(params?: {
   );
   const list = Array.isArray(data) ? data : (data?.customers ?? []);
   return list.map(mapCustomer);
+}
+
+export interface GetCustomersPagedParams {
+  keyword?: string;
+  consultStatus?: string;
+  customerType?: CustomerType;
+  assignedAccountIdx?: number;
+  page?: number;
+  limit?: number;
+}
+
+export interface GetCustomersPagedResult {
+  customers: Customer[];
+  total: number;
+}
+
+/** 고객 목록 조회 (페이징) */
+export async function getCustomersPaged(
+  params?: GetCustomersPagedParams,
+): Promise<GetCustomersPagedResult> {
+  const query = new URLSearchParams();
+  if (params?.customerType) query.set('customerType', params.customerType);
+  if (params?.keyword) query.set('keyword', params.keyword);
+  if (params?.consultStatus) query.set('consultStatus', params.consultStatus);
+  if (params?.assignedAccountIdx) query.set('assignedAccountIdx', String(params.assignedAccountIdx));
+  query.set('page', String(params?.page ?? 1));
+  query.set('limit', String(params?.limit ?? 20));
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const data = await customerFetch<any>(
+    `${BASE_URL2}/api/app/customers?${query}`,
+  );
+  const list = Array.isArray(data) ? data : (data?.customers ?? []);
+  return { customers: list.map(mapCustomer), total: data?.total ?? list.length };
 }
 
 /** 고객 상세 조회 */

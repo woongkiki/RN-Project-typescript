@@ -155,27 +155,33 @@ export const getBoardCategories = async (
   const data = await boardFetch<any>(
     `${BASE_URL2}/api/app/board/categories?board_type=${boardType}`,
   );
-  const list = Array.isArray(data) ? data : (data?.categories ?? []);
+  const list = Array.isArray(data) ? data : data?.categories ?? [];
   return list.map(mapCategory);
 };
 
 /** 동영상 교육 카테고리 목록 */
-export const getVideoCategoriesForEducation = async (): Promise<BoardCategory[]> => {
+export const getVideoCategoriesForEducation = async (): Promise<
+  BoardCategory[]
+> => {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const data = await boardFetch<any>(
     `${BASE_URL2}/api/app/board/categories?board_type=education`,
   );
-  const list = Array.isArray(data) ? data : (data?.categories ?? []);
+
+  const list = Array.isArray(data) ? data : data?.categories ?? [];
   return list.map(mapCategory);
 };
 
 /** 교육 자료 카테고리 목록 */
-export const getDocCategoriesForEducation = async (): Promise<BoardCategory[]> => {
+export const getDocCategoriesForEducation = async (): Promise<
+  BoardCategory[]
+> => {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const data = await boardFetch<any>(
     `${BASE_URL2}/api/app/board/categories?board_type=education`,
   );
-  const list = Array.isArray(data) ? data : (data?.categories ?? []);
+
+  const list = Array.isArray(data) ? data : data?.categories ?? [];
   return list.map(mapCategory);
 };
 
@@ -221,7 +227,11 @@ export const getBoardPost = async (idx: number): Promise<BoardPost> => {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const data = await boardFetch<any>(`${BASE_URL2}/api/app/board/post/${idx}`);
   const raw = data?.post ?? data;
-  return { ...mapPost(raw), content: raw.content ?? '', files: Array.isArray(raw.files) ? raw.files.map(mapFile) : [] };
+  return {
+    ...mapPost(raw),
+    content: raw.content ?? '',
+    files: Array.isArray(raw.files) ? raw.files.map(mapFile) : [],
+  };
 };
 
 export interface CreateBoardPostParams {
@@ -239,12 +249,20 @@ export const createBoardPost = async (
   if (params.file) {
     const formData = new FormData();
     formData.append('board_type', params.boardType);
-    if (params.categoryIdx != null) formData.append('category_idx', String(params.categoryIdx));
+    if (params.categoryIdx != null)
+      formData.append('category_idx', String(params.categoryIdx));
     formData.append('title', params.title);
     formData.append('content', params.content);
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    formData.append('file', { uri: params.file.uri, name: params.file.name, type: params.file.type } as any);
-    return boardPost<{ idx: number }>(`${BASE_URL2}/api/app/board/post`, formData);
+    formData.append('file', {
+      uri: params.file.uri,
+      name: params.file.name,
+      type: params.file.type,
+    } as any);
+    return boardPost<{ idx: number }>(
+      `${BASE_URL2}/api/app/board/post`,
+      formData,
+    );
   }
   return boardPost<{ idx: number }>(`${BASE_URL2}/api/app/board/post`, {
     board_type: params.boardType,
@@ -265,26 +283,41 @@ export const deleteBoardPost = async (_idx: number): Promise<void> => {
 export interface GetEducationVideosParams {
   categoryIdx?: number | null;
   keyword?: string;
+  page?: number;
+  limit?: number;
+}
+
+export interface GetEducationVideosResult {
+  videos: EducationVideoItem[];
+  total: number;
 }
 
 /** 동영상 교육 목록 조회 */
 export const getEducationVideos = async (
   params: GetEducationVideosParams,
-): Promise<EducationVideoItem[]> => {
+): Promise<GetEducationVideosResult> => {
   const query = new URLSearchParams();
   if (params.categoryIdx) query.set('category_idx', String(params.categoryIdx));
   if (params.keyword) query.set('keyword', params.keyword);
+  if (params.page) query.set('page', String(params.page));
+  if (params.limit) query.set('limit', String(params.limit));
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const data = await boardFetch<any>(
     `${BASE_URL2}/api/app/board/education/videos?${query}`,
   );
-  const list = Array.isArray(data) ? data : (data?.videos ?? []);
-  return list.map(mapVideo);
+
+  if (Array.isArray(data)) {
+    return { videos: data.map(mapVideo), total: data.length };
+  }
+  const videos = Array.isArray(data?.videos) ? data.videos.map(mapVideo) : [];
+  return { videos, total: data?.total ?? videos.length };
 };
 
 /** 동영상 교육 상세 조회 */
-export const getEducationVideo = async (idx: number): Promise<EducationVideoItem> => {
+export const getEducationVideo = async (
+  idx: number,
+): Promise<EducationVideoItem> => {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const data = await boardFetch<any>(
     `${BASE_URL2}/api/app/board/education/video/${idx}`,
@@ -298,22 +331,35 @@ export const getEducationVideo = async (idx: number): Promise<EducationVideoItem
 export interface GetEducationDocsParams {
   categoryIdx?: number | null;
   keyword?: string;
+  page?: number;
+  limit?: number;
+}
+
+export interface GetEducationDocsResult {
+  docs: BoardPostItem[];
+  total: number;
 }
 
 /** 교육 자료 목록 조회 */
 export const getEducationDocs = async (
   params: GetEducationDocsParams,
-): Promise<BoardPostItem[]> => {
+): Promise<GetEducationDocsResult> => {
   const query = new URLSearchParams();
   if (params.categoryIdx) query.set('category_idx', String(params.categoryIdx));
   if (params.keyword) query.set('keyword', params.keyword);
+  if (params.page) query.set('page', String(params.page));
+  if (params.limit) query.set('limit', String(params.limit));
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const data = await boardFetch<any>(
     `${BASE_URL2}/api/app/board/education/docs?${query}`,
   );
-  const list = Array.isArray(data) ? data : (data?.docs ?? []);
-  return list.map(mapPost);
+
+  if (Array.isArray(data)) {
+    return { docs: data.map(mapPost), total: data.length };
+  }
+  const docs = Array.isArray(data?.docs) ? data.docs.map(mapPost) : [];
+  return { docs, total: data?.total ?? docs.length };
 };
 
 /** 교육 자료 상세 조회 */
@@ -323,7 +369,11 @@ export const getEducationDoc = async (idx: number): Promise<BoardPost> => {
     `${BASE_URL2}/api/app/board/education/doc/${idx}`,
   );
   const raw = data?.doc ?? data;
-  return { ...mapPost(raw), content: raw.content ?? '', files: Array.isArray(raw.files) ? raw.files.map(mapFile) : [] };
+  return {
+    ...mapPost(raw),
+    content: raw.content ?? '',
+    files: Array.isArray(raw.files) ? raw.files.map(mapFile) : [],
+  };
 };
 
 // ─── 세미나 ───────────────────────────────────────────────────────────
@@ -345,7 +395,7 @@ export const getSeminarPosts = async (
   const data = await boardFetch<any>(
     `${BASE_URL2}/api/app/board/seminars?${query}`,
   );
-  const list = Array.isArray(data) ? data : (data?.seminars ?? []);
+  const list = Array.isArray(data) ? data : data?.seminars ?? [];
   return list.map(mapSeminar);
 };
 
@@ -356,5 +406,9 @@ export const getSeminarPost = async (idx: number): Promise<SeminarPost> => {
     `${BASE_URL2}/api/app/board/seminar/${idx}`,
   );
   const raw = data?.seminar ?? data;
-  return { ...mapSeminar(raw), description: raw.description ?? '', files: Array.isArray(raw.files) ? raw.files.map(mapFile) : [] };
+  return {
+    ...mapSeminar(raw),
+    description: raw.description ?? '',
+    files: Array.isArray(raw.files) ? raw.files.map(mapFile) : [],
+  };
 };
