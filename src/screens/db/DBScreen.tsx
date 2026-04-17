@@ -18,10 +18,13 @@ import DbButton from '../../components/DbButton';
 import Bar from '../../components/Bar';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { MainStackParamList } from '../../navigation/types';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useFocusEffect } from '@react-navigation/native';
+import { useCallback } from 'react';
 import { BASE_URL } from '../../api/util';
-import { getProgressCounts, getStatusHistory } from '../../api/customer';
+import { getProgressCounts, getStatusHistory, getCustomersPaged } from '../../api/customer';
 import { ProgressCounts, StatusHistoryItem } from '../../types';
+import { useAuthStore } from '../../store';
+import { getNotifications } from '../../api/notification';
 
 type NavigationProp = NativeStackNavigationProp<MainStackParamList>;
 
@@ -29,7 +32,9 @@ export default function DBScreen() {
   const { width } = useAppDimensions();
 
   const navigation = useNavigation<NavigationProp>();
+  const user = useAuthStore(state => state.user);
 
+  const [hasUnread, setHasUnread] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [currentDate, setCurrentDate] = useState(new Date());
   const [orderBy, setOrderBy] = useState(true); // true = desc
@@ -40,21 +45,32 @@ export default function DBScreen() {
     call: 0,
     absent: 0,
   });
+  const [totalCustomers, setTotalCustomers] = useState(0);
   const [statusHistory, setStatusHistory] = useState<StatusHistoryItem[]>([]);
 
   const loadData = () => {
-    getProgressCounts().then(setProgressCounts);
-    getStatusHistory(20, orderBy).then(setStatusHistory);
+    getProgressCounts().then(setProgressCounts).catch(() => {});
+    getStatusHistory(20, orderBy).then(setStatusHistory).catch(() => {});
+    if (user?.idx) {
+      getCustomersPaged({ assignedAccountIdx: user.idx, page: 1, limit: 1 })
+        .then(res => setTotalCustomers(res.total))
+        .catch(() => {});
+    }
   };
 
   useEffect(() => {
     loadData();
+    getNotifications()
+      .then(list => setHasUnread(list.some(n => !n.isRead)))
+      .catch(() => {});
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  useEffect(() => {
-    getStatusHistory(20, orderBy).then(setStatusHistory);
-  }, [orderBy]);
+  useFocusEffect(
+    useCallback(() => {
+      getStatusHistory(20, orderBy).then(setStatusHistory).catch(() => {});
+    }, [orderBy]),
+  );
 
   const formatDate = (date: Date) => {
     const year = date.getFullYear();
@@ -109,19 +125,21 @@ export default function DBScreen() {
                 source={{ uri: BASE_URL + '/images/hd_bell.png' }}
                 style={{ width: 20, height: 20, resizeMode: 'contain' }}
               />
-              <View
-                style={{
-                  width: 10,
-                  height: 10,
-                  borderRadius: 10,
-                  borderWidth: 1,
-                  borderColor: colors.white,
-                  backgroundColor: colors.mainRed,
-                  position: 'absolute',
-                  top: 12,
-                  right: 0,
-                }}
-              ></View>
+              {hasUnread && (
+                <View
+                  style={{
+                    width: 10,
+                    height: 10,
+                    borderRadius: 10,
+                    borderWidth: 1,
+                    borderColor: colors.white,
+                    backgroundColor: colors.mainRed,
+                    position: 'absolute',
+                    top: 12,
+                    right: 0,
+                  }}
+                />
+              )}
             </TouchableOpacity>
           }
         />
@@ -184,12 +202,12 @@ export default function DBScreen() {
                 progressCounts.call +
                 progressCounts.absent
               }
-              total={progressCounts.total}
+              total={totalCustomers || 1}
               label={'DB 진행률'}
             />
             <ProgressBox
               value={progressCounts.meeting}
-              total={progressCounts.total}
+              total={totalCustomers || 1}
               label={'미팅 진행률'}
             />
           </View>

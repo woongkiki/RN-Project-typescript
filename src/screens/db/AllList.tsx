@@ -25,6 +25,7 @@ import FilterBottomSheet, {
 import { BASE_URL } from '../../api/util';
 import { getCustomers } from '../../api/customer';
 import { Customer } from '../../types';
+import { useAuthStore } from '../../store';
 
 type Props = NativeStackScreenProps<MainStackParamList, 'AllList'>;
 
@@ -41,6 +42,8 @@ const toEndOfDay = (s: string): Date => {
 };
 
 export default function AllList({ navigation }: Props) {
+  const user = useAuthStore(state => state.user);
+
   const [schText, setSchText] = useState('');
   const [selectCategory, setSelectCategory] = useState('전체');
   const [allCustomers, setAllCustomers] = useState<Customer[]>([]);
@@ -63,10 +66,11 @@ export default function AllList({ navigation }: Props) {
       !!activeFilter.endDate);
 
   useEffect(() => {
-    getCustomers().then(data => {
+    if (!user?.idx) return;
+    getCustomers({ assignedAccountIdx: user.idx }).then(data => {
       setAllCustomers(data);
     });
-  }, []);
+  }, [user?.idx]);
 
   useEffect(() => {
     let result = [...allCustomers];

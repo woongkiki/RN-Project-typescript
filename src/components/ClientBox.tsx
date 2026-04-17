@@ -13,7 +13,7 @@ import { Customer } from '../types';
 interface Props {
   item: Customer;
   onPress?: () => void;
-  isViewVisible?: boolean;  // AllList 전용: 열람/미열람 뱃지
+  isViewVisible?: boolean; // AllList 전용: 열람/미열람 뱃지
   nextConsultDate?: string; // 다음 상담일 (선택)
   navigation: NativeStackNavigationProp<
     MainStackParamList,
@@ -57,16 +57,24 @@ export default function ClientBox({
                 style={{
                   paddingVertical: 5,
                   paddingHorizontal: 6,
-                  backgroundColor: item.consultStatus !== '상담대기' ? colors.primary : colors.gray1,
+                  backgroundColor:
+                    item.consultStatus !== '상담대기'
+                      ? colors.primary
+                      : colors.gray1,
                   borderRadius: 4,
                 }}
               >
                 <CommonText
-                  labelText={item.consultStatus !== '상담대기' ? '열람' : '미열람'}
+                  labelText={
+                    item.consultStatus !== '상담대기' ? '열람' : '미열람'
+                  }
                   style={[
                     fonts.semiBold,
                     {
-                      color: item.consultStatus !== '상담대기' ? colors.white : colors.gray6,
+                      color:
+                        item.consultStatus !== '상담대기'
+                          ? colors.white
+                          : colors.gray6,
                       fontSize: 11,
                     },
                   ]}
@@ -79,17 +87,10 @@ export default function ClientBox({
               labelText={item.name}
               style={[fonts.semiBold, styles.dbText, { color: colors.gray10 }]}
             />
-            <View
-              style={{
-                paddingHorizontal: 6,
-                paddingVertical: 3,
-                backgroundColor: colors.gray1,
-                borderRadius: 4,
-              }}
-            >
+            <View>
               <CommonText
-                labelText={item.consultStatus}
-                style={[fonts.medium, { fontSize: 12, color: colors.gray7 }]}
+                labelText={item.age + ' · ' + item.gender}
+                style={[fonts.regular, { fontSize: 15, color: colors.gray7 }]}
               />
             </View>
           </View>
@@ -106,7 +107,7 @@ export default function ClientBox({
                 />
               </View>
             )}
-            {item.phone && (
+            {/* {item.phone && (
               <View style={[styles.row, { gap: 5 }]}>
                 <Image
                   source={{ uri: BASE_URL + '/images/address_icon_gray.png' }}
@@ -117,7 +118,7 @@ export default function ClientBox({
                   style={{ fontSize: 13, color: colors.gray7 }}
                 />
               </View>
-            )}
+            )} */}
             {item.address && (
               <View style={[styles.row, { gap: 5 }]}>
                 <Image

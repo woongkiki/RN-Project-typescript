@@ -1,61 +1,24 @@
-import React, { useState } from 'react';
-import { View, Text, StyleSheet, Image, TouchableOpacity } from 'react-native';
+import React, { useState, useCallback } from 'react';
+import { View, StyleSheet, Image, TouchableOpacity, ActivityIndicator } from 'react-native';
 import Layout from '../../components/Layout';
 import MainHeader from '../../components/MainHeader';
 import { colors } from '../../constants/colors';
 import CommonText from '../../components/CommonText';
 import { useAppDimensions } from '../../hooks/useAppDimensions';
 import { fonts } from '../../constants/fonts';
-import ProgressBox from '../../components/ProgressBox';
-import BusinessCountButton from '../../components/BusinessCountButton';
-import DbButton from '../../components/DbButton';
-import Bar from '../../components/Bar';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { MainStackParamList } from '../../navigation/types';
-import { useNavigation } from '@react-navigation/native';
+import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { BASE_URL } from '../../api/util';
 import { Calendar, DateData, LocaleConfig } from 'react-native-calendars';
 import { DayProps } from 'react-native-calendars/src/calendar/day';
+import { getSchedules, Schedule } from '../../api/schedule';
 
-// 앱 초기화 시 한 번만 실행 (App.tsx 또는 해당 컴포넌트 상단)
+// 앱 초기화 시 한 번만 실행
 LocaleConfig.locales['ko'] = {
-  monthNames: [
-    '1월',
-    '2월',
-    '3월',
-    '4월',
-    '5월',
-    '6월',
-    '7월',
-    '8월',
-    '9월',
-    '10월',
-    '11월',
-    '12월',
-  ],
-  monthNamesShort: [
-    '1월',
-    '2월',
-    '3월',
-    '4월',
-    '5월',
-    '6월',
-    '7월',
-    '8월',
-    '9월',
-    '10월',
-    '11월',
-    '12월',
-  ],
-  dayNames: [
-    '일요일',
-    '월요일',
-    '화요일',
-    '수요일',
-    '목요일',
-    '금요일',
-    '토요일',
-  ],
+  monthNames: ['1월','2월','3월','4월','5월','6월','7월','8월','9월','10월','11월','12월'],
+  monthNamesShort: ['1월','2월','3월','4월','5월','6월','7월','8월','9월','10월','11월','12월'],
+  dayNames: ['일요일','월요일','화요일','수요일','목요일','금요일','토요일'],
   dayNamesShort: ['일', '월', '화', '수', '목', '금', '토'],
   today: '오늘',
 };
@@ -68,7 +31,15 @@ export default function ScheduleScreen() {
 
   const today = new Date().toISOString().split('T')[0]; // 'YYYY-MM-DD'
 
-  const [selected, setSelected] = useState('');
+  const [selected, setSelected] = useState(today);
+  const [currentYearMonth, setCurrentYearMonth] = useState(today.slice(0, 7)); // YYYY-MM
+
+  // 월별 전체 스케줄 (캘린더 dot 표시용)
+  const [monthSchedules, setMonthSchedules] = useState<Schedule[]>([]);
+  // 선택 날짜 스케줄 목록
+  const [daySchedules, setDaySchedules] = useState<Schedule[]>([]);
+  const [, setLoadingMonth] = useState(false);
+  const [loadingDay, setLoadingDay] = useState(false);
 
   const navigation = useNavigation<NavigationProp>();
 
@@ -76,8 +47,8 @@ export default function ScheduleScreen() {
     navigation.navigate('ScheduleForm', { idx: '', w: '' });
   };
 
-  const scheduleUpdate = (idx: any) => {
-    navigation.navigate('ScheduleForm', { idx: idx, w: 'u' });
+  const scheduleUpdate = (idx: number) => {
+    navigation.navigate('ScheduleForm', { idx: String(idx), w: 'u' });
   };
 
   const formatDisplayDate = (dateString: string) => {
@@ -85,20 +56,79 @@ export default function ScheduleScreen() {
     return dateString.replace(/-/g, '.');
   };
 
-  const getMarkedDates = () => {
-    const marks: Record<string, any> = {
-      '2026-04-11': { marked: true, dotColor: colors.primary },
-      '2026-04-16': { marked: true, dotColor: colors.primary },
-    };
+  const formatTime = (timeStr: string) => {
+    if (!timeStr) return '';
+    const [h, m] = timeStr.split(':');
+    const hour = parseInt(h, 10);
+    const ampm = hour < 12 ? 'AM' : 'PM';
+    const hour12 = hour % 12 === 0 ? 12 : hour % 12;
+    return `${String(hour12).padStart(2, '0')}:${m} ${ampm}`;
+  };
 
-    if (selected) {
-      marks[selected] = {
-        ...marks[selected], // 기존 marked 속성 유지
-        selected: true,
-        selectedColor: 'rgba(173, 216, 230, 0.5)',
-        selectedTextColor: '#000',
+  // 월별 스케줄 로드
+  const loadMonthSchedules = useCallback(async (yearMonth: string) => {
+    setLoadingMonth(true);
+    try {
+      const list = await getSchedules({ yearMonth });
+      setMonthSchedules(list);
+    } catch (e: any) {
+      console.error('[ScheduleScreen] loadMonthSchedules:', e);
+    } finally {
+      setLoadingMonth(false);
+    }
+  }, []);
+
+  // 선택 날짜 스케줄 로드
+  const loadDaySchedules = useCallback(async (date: string) => {
+    setLoadingDay(true);
+    try {
+      const list = await getSchedules({ date });
+      setDaySchedules(list);
+    } catch (e: any) {
+      console.error('[ScheduleScreen] loadDaySchedules:', e);
+    } finally {
+      setLoadingDay(false);
+    }
+  }, []);
+
+  // 화면 포커스 시 재조회
+  useFocusEffect(
+    useCallback(() => {
+      loadMonthSchedules(currentYearMonth);
+      loadDaySchedules(selected);
+    }, [currentYearMonth, selected, loadMonthSchedules, loadDaySchedules]),
+  );
+
+  const handleDayPress = (day: DateData) => {
+    setSelected(day.dateString);
+    loadDaySchedules(day.dateString);
+  };
+
+  const handleMonthChange = (month: { year: number; month: number }) => {
+    const ym = `${month.year}-${String(month.month).padStart(2, '0')}`;
+    setCurrentYearMonth(ym);
+    loadMonthSchedules(ym);
+  };
+
+  const getMarkedDates = () => {
+    const marks: Record<string, any> = {};
+
+    // 월별 스케줄 dot 표시
+    for (const s of monthSchedules) {
+      marks[s.scheduleDate] = {
+        ...marks[s.scheduleDate],
+        marked: true,
+        dotColor: colors.primary,
       };
     }
+
+    // 선택된 날짜 하이라이트
+    marks[selected] = {
+      ...marks[selected],
+      selected: true,
+      selectedColor: 'rgba(173, 216, 230, 0.5)',
+      selectedTextColor: '#000',
+    };
 
     return marks;
   };
@@ -139,7 +169,8 @@ export default function ScheduleScreen() {
       >
         <Calendar
           current={today}
-          onDayPress={day => setSelected(day.dateString)}
+          onDayPress={handleDayPress}
+          onMonthChange={handleMonthChange}
           renderHeader={date => {
             const year = date.getFullYear();
             const month = date.getMonth() + 1;
@@ -148,10 +179,7 @@ export default function ScheduleScreen() {
                 labelText={`${year}년 ${month}월`}
                 labelTextStyle={[
                   fonts.semiBold,
-                  {
-                    fontSize: 16,
-                    color: colors.gray10,
-                  },
+                  { fontSize: 16, color: colors.gray10 },
                 ]}
               />
             );
@@ -168,23 +196,14 @@ export default function ScheduleScreen() {
           )}
           markedDates={getMarkedDates()}
           theme={{
-            // 헤더
             textMonthFontWeight: 'bold',
             textMonthFontSize: 16,
             arrowColor: colors.gray9,
-
-            // 요일 헤더
             textSectionTitleColor: colors.gray6,
-
-            // 날짜
             dayTextColor: colors.gray10,
-            todayTextColor: colors.primary, // 오늘 날짜 파란색
+            todayTextColor: colors.primary,
             textDayFontSize: 14,
-
-            // 비활성(이전/다음달) 날짜
             textDisabledColor: colors.gray3,
-
-            // 일요일 빨간색은 별도 처리 필요 (아래 참고)
           }}
           dayComponent={({
             date,
@@ -245,102 +264,67 @@ export default function ScheduleScreen() {
           }}
         />
       </View>
+
       <View style={[styles.scheduleWrap]}>
-        <View>
-          <CommonText
-            labelText={formatDisplayDate(selected || today)}
-            style={[styles.dateLabel]}
-          />
-          <TouchableOpacity
-            onPress={() => scheduleUpdate('2')}
-            style={{
-              gap: 10,
-              backgroundColor: colors.white,
-              padding: 15,
-              borderRadius: 12,
-              // iOS 그림자
-              shadowColor: 'rgba(175, 176, 180, 0.15)',
-              shadowOffset: { width: 0, height: 2 },
-              shadowOpacity: 8,
-              shadowRadius: 8,
+        <CommonText
+          labelText={formatDisplayDate(selected)}
+          style={[styles.dateLabel]}
+        />
 
-              // Android 그림자
-              elevation: 3,
-            }}
-          >
+        {loadingDay ? (
+          <ActivityIndicator color={colors.primary} style={{ marginTop: 20 }} />
+        ) : daySchedules.length === 0 ? (
+          <View style={styles.emptyWrap}>
             <CommonText
-              labelText="홍길동님과 통화"
-              style={[fonts.semiBold, { fontSize: 16, color: colors.gray10 }]}
+              labelText="등록된 일정이 없습니다."
+              labelTextStyle={[{ fontSize: 14, color: colors.gray6 }]}
             />
-            <View style={[styles.row, { gap: 5 }]}>
+          </View>
+        ) : (
+          daySchedules.map(item => (
+            <TouchableOpacity
+              key={item.idx}
+              onPress={() => scheduleUpdate(item.idx)}
+              style={[styles.scheduleCard, { marginBottom: 10 }]}
+            >
               <CommonText
-                labelText={formatDisplayDate(selected || today)}
-                style={[styles.datetimeText]}
+                labelText={item.title}
+                style={[fonts.semiBold, { fontSize: 16, color: colors.gray10 }]}
               />
-              <View
-                style={[{ width: 1, height: 8, backgroundColor: colors.gray3 }]}
-              />
-              <CommonText labelText="10:00 AM" style={[styles.datetimeText]} />
-            </View>
-            <View style={[styles.row, { gap: 4 }]}>
-              <Image
-                source={{ uri: BASE_URL + '/images/address_icon_gray.png' }}
-                style={{ width: 10, height: 10, resizeMode: 'contain' }}
-              />
-              <View style={{ width: width - 80 }}>
+              <View style={[styles.row, { gap: 5 }]}>
                 <CommonText
-                  labelText="서울특별시 구로구 구로동 ㅁㅁ카페"
-                  labelTextStyle={[{ fontSize: 12, color: colors.gray7 }]}
+                  labelText={formatDisplayDate(item.scheduleDate)}
+                  style={[styles.datetimeText]}
+                />
+                <View style={[{ width: 1, height: 8, backgroundColor: colors.gray3 }]} />
+                <CommonText
+                  labelText={formatTime(item.scheduleTime ?? '')}
+                  style={[styles.datetimeText]}
                 />
               </View>
-            </View>
-          </TouchableOpacity>
-          <TouchableOpacity
-            onPress={() => scheduleUpdate('1')}
-            style={{
-              gap: 10,
-              backgroundColor: colors.white,
-              padding: 15,
-              borderRadius: 12,
-              marginTop: 10,
-              // iOS 그림자
-              shadowColor: 'rgba(175, 176, 180, 0.3)',
-              shadowOffset: { width: 0, height: 2 },
-              shadowOpacity: 8,
-              shadowRadius: 8,
-
-              // Android 그림자
-              elevation: 3,
-            }}
-          >
-            <CommonText
-              labelText="홍길동님과 통화"
-              style={[fonts.semiBold, { fontSize: 16, color: colors.gray10 }]}
-            />
-            <View style={[styles.row, { gap: 5 }]}>
-              <CommonText
-                labelText={formatDisplayDate(selected || today)}
-                style={[styles.datetimeText]}
-              />
-              <View
-                style={[{ width: 1, height: 8, backgroundColor: colors.gray3 }]}
-              />
-              <CommonText labelText="10:00 AM" style={[styles.datetimeText]} />
-            </View>
-            <View style={[styles.row, { gap: 4 }]}>
-              <Image
-                source={{ uri: BASE_URL + '/images/address_icon_gray.png' }}
-                style={{ width: 10, height: 10, resizeMode: 'contain' }}
-              />
-              <View style={{ width: width - 80 }}>
+              {item.addr1 ? (
+                <View style={[styles.row, { gap: 4 }]}>
+                  <Image
+                    source={{ uri: BASE_URL + '/images/address_icon_gray.png' }}
+                    style={{ width: 10, height: 10, resizeMode: 'contain' }}
+                  />
+                  <View style={{ width: width - 80 }}>
+                    <CommonText
+                      labelText={[item.addr1, item.addr2].filter(Boolean).join(' ')}
+                      labelTextStyle={[{ fontSize: 12, color: colors.gray7 }]}
+                    />
+                  </View>
+                </View>
+              ) : null}
+              {item.customerName ? (
                 <CommonText
-                  labelText="서울특별시 구로구 구로동 ㅁㅁ카페"
-                  labelTextStyle={[{ fontSize: 12, color: colors.gray7 }]}
+                  labelText={`고객: ${item.customerName}`}
+                  labelTextStyle={[{ fontSize: 12, color: colors.gray6 }]}
                 />
-              </View>
-            </View>
-          </TouchableOpacity>
-        </View>
+              ) : null}
+            </TouchableOpacity>
+          ))
+        )}
       </View>
     </Layout>
   );
@@ -365,5 +349,20 @@ const styles = StyleSheet.create({
   datetimeText: {
     fontSize: 12,
     color: colors.primary,
+  },
+  scheduleCard: {
+    gap: 10,
+    backgroundColor: colors.white,
+    padding: 15,
+    borderRadius: 12,
+    shadowColor: 'rgba(175, 176, 180, 0.15)',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 8,
+    shadowRadius: 8,
+    elevation: 3,
+  },
+  emptyWrap: {
+    alignItems: 'center',
+    paddingVertical: 40,
   },
 });

@@ -24,6 +24,7 @@ import { colors } from '../../constants/colors';
 import CommonText from '../../components/CommonText';
 import { RootStackParamList } from '../../navigation/types';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
+import { fonts } from '../../constants/fonts';
 
 const SAVED_ID_KEY = 'saved_login_id';
 
@@ -86,7 +87,12 @@ export default function LoginScreen({ navigation }: Props) {
         alignItems: 'center',
       }}
     >
-      <View style={{ width: 172, height: 56, backgroundColor: '#f00' }}></View>
+      <View>
+        <CommonText
+          labelText="InsightCore"
+          style={[fonts.black, { fontSize: 30, color: colors.primary }]}
+        />
+      </View>
       <View style={{ width: '100%', gap: 15, marginTop: 60, marginBottom: 40 }}>
         <CommonInput value={id} onChangeText={setId} placeholder={'아이디'} />
         <CommonInput

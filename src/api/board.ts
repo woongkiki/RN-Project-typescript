@@ -41,12 +41,25 @@ async function parseJsonSafely<T>(res: Response): Promise<ApiResponse<T>> {
 
 async function boardFetch<T>(url: string): Promise<T> {
   const res = await fetch(url, { headers: authHeaders() });
+  if (!res.ok) {
+    throw new Error(`서버 오류 (HTTP ${res.status}): ${url}`);
+  }
   const json = await parseJsonSafely<T>(res);
   const ok = json.success ?? json.result ?? false;
   if (!ok || json.data == null) {
     throw new Error(json.message ?? '요청에 실패했습니다.');
   }
   return json.data;
+}
+
+async function boardDelete<T>(url: string): Promise<T> {
+  const res = await fetch(url, { method: 'DELETE', headers: authHeaders() });
+  const json = await parseJsonSafely<T>(res);
+  const ok = json.success ?? json.result ?? false;
+  if (!ok) {
+    throw new Error(json.message ?? '요청에 실패했습니다.');
+  }
+  return json.data as T;
 }
 
 async function boardPost<T>(url: string, body: FormData | object): Promise<T> {
@@ -65,6 +78,7 @@ async function boardPost<T>(url: string, body: FormData | object): Promise<T> {
     body: isFormData ? body : JSON.stringify(body),
   });
   const json = await parseJsonSafely<T>(res);
+  console.log('json', json);
   const ok = json.success ?? json.result ?? false;
   if (!ok) {
     throw new Error(json.message ?? '요청에 실패했습니다.');
@@ -214,6 +228,8 @@ export const getBoardPosts = async (
   const data = await boardFetch<any>(
     `${BASE_URL2}/api/app/board/posts?${query}`,
   );
+
+  console.log('data', data);
 
   if (Array.isArray(data)) {
     return { posts: data.map(mapPost), total: data.length };
@@ -411,4 +427,41 @@ export const getSeminarPost = async (idx: number): Promise<SeminarPost> => {
     description: raw.description ?? '',
     files: Array.isArray(raw.files) ? raw.files.map(mapFile) : [],
   };
+};
+
+// ─── 댓글 ─────────────────────────────────────────────────────────────
+
+export interface BoardComment {
+  idx: number;
+  accountName: string;
+  content: string;
+  createdAt: string;
+  isMine: boolean;
+}
+
+/** 댓글 목록 조회 */
+export const getBoardComments = async (postIdx: number): Promise<BoardComment[]> => {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const data = await boardFetch<any>(`${BASE_URL2}/api/app/board/post/${postIdx}/comments`);
+  const list = Array.isArray(data) ? data : data?.comments ?? [];
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  return list.map((c: any) => ({
+    idx: c.idx,
+    accountName: c.account_name,
+    content: c.content,
+    createdAt: c.created_at,
+    isMine: c.is_mine,
+  }));
+};
+
+/** 댓글 작성 */
+export const createBoardComment = async (postIdx: number, content: string): Promise<number> => {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const data = await boardPost<any>(`${BASE_URL2}/api/app/board/post/${postIdx}/comment`, { content });
+  return data?.idx ?? 0;
+};
+
+/** 댓글 삭제 (본인만) */
+export const deleteBoardComment = async (commentIdx: number): Promise<void> => {
+  await boardDelete<unknown>(`${BASE_URL2}/api/app/board/comment/${commentIdx}`);
 };

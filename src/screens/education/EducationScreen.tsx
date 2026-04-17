@@ -158,13 +158,19 @@ export default function EducationScreen({ route, navigation }: Props) {
     }
   };
 
+  const ytThumb = (item: EducationVideoItem) =>
+    item.thumbnailUrl ||
+    (item.youtubeId
+      ? `https://img.youtube.com/vi/${item.youtubeId}/hqdefault.jpg`
+      : '');
+
   const videoRenderItem = ({ item, index }: { item: EducationVideoItem; index: number }) => (
     <VideoListItem
       item={{
         idx: item.idx,
         title: item.title,
         content: item.description,
-        thumb: item.thumbnailUrl,
+        thumb: ytThumb(item),
         date: toDate(item.createdAt),
         isEnd: item.isCompleted,
       }}

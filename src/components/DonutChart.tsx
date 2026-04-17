@@ -8,7 +8,7 @@ import { colors } from '../constants/colors';
 interface DonutChartProps {
   value: number; // 현재값
   total: number; // 전체값
-  unit?: 'percent' | 'fraction'; // 표시 형식
+  unit?: 'percent' | 'fraction' | 'count'; // 표시 형식
   size?: number;
   strokeWidth?: number;
   color?: string;
@@ -17,7 +17,7 @@ interface DonutChartProps {
 
 function DonutChart({
   value,
-  total,
+  total = 0,
   unit = 'fraction',
   size = 80,
   strokeWidth = 15,
@@ -33,6 +33,8 @@ function DonutChart({
   const displayText =
     unit === 'percent'
       ? `${Math.round(progress * 100)}%`
+      : unit === 'count'
+      ? `${value}건`
       : `${value}/${total > 0 ? total : 0}`;
 
   return (

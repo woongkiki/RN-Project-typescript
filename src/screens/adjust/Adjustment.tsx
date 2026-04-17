@@ -23,17 +23,22 @@ import {
 } from '../../components/Table';
 import { BASE_URL } from '../../api/util';
 import DateTimePickerModal from 'react-native-modal-datetime-picker';
-import { getAdjustments, formatAmount } from '../../api/adjustment';
-import { AdjustmentItem } from '../../types';
+import {
+  getDbSettlements,
+  formatAmount,
+  DbSettlementListResult,
+} from '../../api/adjustment';
+import { DbSettlement } from '../../types';
+import { useAuthStore } from '../../store';
 
 type Props = NativeStackScreenProps<MainStackParamList, 'Adjustment'>;
 
 const COLUMNS: TableColumn[] = [
-  { key: 'date', label: '일자' },
-  { key: 'name', label: '고객명' },
-  { key: 'grade', label: '등급' },
-  { key: 'type', label: '종류' },
-  { key: 'price', label: '단가', width: 120 },
+  { key: 'month', label: '정산월' },
+  { key: 'distribute', label: '분배' },
+  { key: 'asExclude', label: 'AS제외' },
+  { key: 'net', label: '순건' },
+  { key: 'amount', label: '금액', width: 120 },
   { key: 'status', label: '상태' },
 ];
 
@@ -44,13 +49,13 @@ const formatDate = (date: Date): string => {
   return `${y}.${m}.${d}`;
 };
 
-const toTableRow = (item: AdjustmentItem): TableRowData => ({
-  date: item.date,
-  name: item.customerName,
-  grade: item.dbGradeName,
-  type: item.type,
-  price: item.unitPrice.toLocaleString('ko-KR'),
-  status: item.asExcluded ? 'AS제외' : '정산대상',
+const toTableRow = (item: DbSettlement): TableRowData => ({
+  month: item.settlement_month,
+  distribute: String(item.total_distribute),
+  asExclude: String(item.total_as_exclude),
+  net: String(item.total_net),
+  amount: item.total_amount.toLocaleString('ko-KR'),
+  status: item.status,
 });
 
 const DateInput = ({
@@ -61,8 +66,19 @@ const DateInput = ({
   onPress: () => void;
 }) => (
   <View style={styles.dateWrapper}>
-    <TouchableOpacity style={styles.dateInput} onPress={onPress} activeOpacity={0.7}>
-      <View style={{ width: 46, height: 46, alignItems: 'center', justifyContent: 'center' }}>
+    <TouchableOpacity
+      style={styles.dateInput}
+      onPress={onPress}
+      activeOpacity={0.7}
+    >
+      <View
+        style={{
+          width: 46,
+          height: 46,
+          alignItems: 'center',
+          justifyContent: 'center',
+        }}
+      >
         <Image
           source={{ uri: BASE_URL + '/images/calendar_gray.png' }}
           style={{ width: 16, height: 16, resizeMode: 'contain' }}
@@ -74,33 +90,38 @@ const DateInput = ({
 );
 
 export default function Adjustment({ navigation }: Props) {
+  const officeIdx = useAuthStore.getState().office?.idx ?? 0;
   const today = new Date();
-  // 시작일: 이번 달 1일 고정, 종료일: 오늘 고정
   const firstOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
 
   const [startDate, setStartDate] = useState<Date>(firstOfMonth);
   const [endDate, setEndDate] = useState<Date>(today);
-  const [pickerTarget, setPickerTarget] = useState<'start' | 'end' | null>(null);
+  const [pickerTarget, setPickerTarget] = useState<'start' | 'end' | null>(
+    null,
+  );
 
   const [totalAmount, setTotalAmount] = useState(0);
   const [status, setStatus] = useState<string>('미확정');
-  const [items, setItems] = useState<AdjustmentItem[]>([]);
+  const [items, setItems] = useState<DbSettlement[]>([]);
   const [loading, setLoading] = useState(true);
 
   const load = (start: Date, end: Date) => {
     setLoading(true);
-    getAdjustments(start, end)
-      .then(res => {
+    getDbSettlements(officeIdx, start, end)
+      .then((res: DbSettlementListResult) => {
         setTotalAmount(res.totalAmount);
         setStatus(res.status);
-        setItems(res.items);
+        setItems(res.list);
       })
+      .catch(err =>
+        Alert.alert('오류', err.message ?? '정산 내역을 불러오지 못했습니다.'),
+      )
       .finally(() => setLoading(false));
   };
 
   useEffect(() => {
     load(startDate, endDate);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const handleConfirm = (date: Date) => {
@@ -126,20 +147,27 @@ export default function Adjustment({ navigation }: Props) {
 
   return (
     <Layout>
-      <SubHeader headerLabel="정산" headerLeftOnPress={() => navigation.goBack()} />
+      <SubHeader
+        headerLabel="정산"
+        headerLeftOnPress={() => navigation.goBack()}
+      />
       <ScrollView>
         {/* 정산 예정 금액 */}
         <View style={{ padding: 20 }}>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
             <CommonText
               labelText="정산 예정 금액"
-              labelTextStyle={[fonts.semiBold, { color: colors.gray7, fontSize: 15 }]}
+              labelTextStyle={[
+                fonts.semiBold,
+                { color: colors.gray7, fontSize: 15 },
+              ]}
             />
             <View
               style={{
                 paddingHorizontal: 8,
                 paddingVertical: 3,
-                backgroundColor: status === '확정' ? colors.primary3 : colors.gray1,
+                backgroundColor:
+                  status === '확정' ? colors.primary3 : colors.gray1,
                 borderRadius: 4,
               }}
             >
@@ -147,27 +175,48 @@ export default function Adjustment({ navigation }: Props) {
                 labelText={status}
                 labelTextStyle={[
                   fonts.semiBold,
-                  { fontSize: 12, color: status === '확정' ? colors.primary : colors.gray6 },
+                  {
+                    fontSize: 12,
+                    color: status === '확정' ? colors.primary : colors.gray6,
+                  },
                 ]}
               />
             </View>
           </View>
           {loading ? (
-            <ActivityIndicator color={colors.primary} style={{ marginTop: 20 }} />
+            <ActivityIndicator
+              color={colors.primary}
+              style={{ marginTop: 20 }}
+            />
           ) : (
             <CommonText
               labelText={formatAmount(totalAmount)}
-              labelTextStyle={[fonts.semiBold, { fontSize: 26, color: colors.gray10, marginTop: 20 }]}
+              labelTextStyle={[
+                fonts.semiBold,
+                { fontSize: 26, color: colors.gray10, marginTop: 20 },
+              ]}
             />
           )}
         </View>
 
         {/* 날짜 필터 */}
-        <View style={{ paddingHorizontal: 20, paddingVertical: 15, backgroundColor: colors.gray1 }}>
+        <View
+          style={{
+            paddingHorizontal: 20,
+            paddingVertical: 15,
+            backgroundColor: colors.gray1,
+          }}
+        >
           <View style={styles.dateRow}>
-            <DateInput value={formatDate(startDate)} onPress={() => setPickerTarget('start')} />
+            <DateInput
+              value={formatDate(startDate)}
+              onPress={() => setPickerTarget('start')}
+            />
             <CommonText labelText="~" labelTextStyle={[styles.dateSeparator]} />
-            <DateInput value={formatDate(endDate)} onPress={() => setPickerTarget('end')} />
+            <DateInput
+              value={formatDate(endDate)}
+              onPress={() => setPickerTarget('end')}
+            />
           </View>
         </View>
 
@@ -175,7 +224,10 @@ export default function Adjustment({ navigation }: Props) {
         <View style={{ padding: 20 }}>
           <CommonText
             labelText={`정산 내역 (${items.length}건)`}
-            labelTextStyle={[fonts.medium, { fontSize: 15, color: colors.gray8 }]}
+            labelTextStyle={[
+              fonts.medium,
+              { fontSize: 15, color: colors.gray8 },
+            ]}
           />
           <View style={{ marginTop: 15 }}>
             {loading ? (
@@ -184,7 +236,10 @@ export default function Adjustment({ navigation }: Props) {
               <View style={{ paddingVertical: 40, alignItems: 'center' }}>
                 <CommonText
                   labelText="해당 기간의 정산 내역이 없습니다."
-                  labelTextStyle={[fonts.medium, { fontSize: 14, color: colors.gray6 }]}
+                  labelTextStyle={[
+                    fonts.medium,
+                    { fontSize: 14, color: colors.gray6 },
+                  ]}
                 />
               </View>
             ) : (
@@ -192,7 +247,11 @@ export default function Adjustment({ navigation }: Props) {
                 <View style={{ flexDirection: 'column' }}>
                   <TableHeader columns={COLUMNS} />
                   {items.map(item => (
-                    <TableRow key={item.idx} columns={COLUMNS} data={toTableRow(item)} />
+                    <TableRow
+                      key={item.idx}
+                      columns={COLUMNS}
+                      data={toTableRow(item)}
+                    />
                   ))}
                 </View>
               </ScrollView>

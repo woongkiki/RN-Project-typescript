@@ -4,6 +4,7 @@ import { MainStackParamList } from '../../navigation/types';
 import Layout from '../../components/Layout';
 import {
   ActivityIndicator,
+  Alert,
   Image,
   Linking,
   Modal,
@@ -33,8 +34,9 @@ import {
   getConsultStatuses,
   updateConsultStatus,
   updateCustomerMemo,
+  getCustomerStatusHistory,
 } from '../../api/customer';
-import { Customer, ConsultLog, ConsultStatus, ROLE_LEVEL } from '../../types';
+import { Customer, ConsultLog, ConsultStatus, StatusHistoryItem, ROLE_LEVEL } from '../../types';
 
 type Props = NativeStackScreenProps<MainStackParamList, 'CustomerInfo'>;
 
@@ -263,9 +265,7 @@ export default function CustomerInfo({ route, navigation }: Props) {
   const { idx, customerType } = route.params;
   const customerIdx = parseInt(idx, 10);
 
-  const { top } = useSafeAreaInsets();
   const { width } = useAppDimensions();
-  const user = useAuthStore(state => state.user);
   const office = useAuthStore(state => state.office);
   const isManager = office?.planCode == 'C' || office?.planCode == 'D';
 
@@ -276,40 +276,67 @@ export default function CustomerInfo({ route, navigation }: Props) {
 
   const [progressStatus, setProgressStatus] = useState('');
   const [memoText, setMemoText] = useState('');
+  const [statusHistory, setStatusHistory] = useState<StatusHistoryItem[]>([]);
 
-  const [tooltipModal, setTooltipModal] = useState(false);
+  const [savedStatus, setSavedStatus] = useState('');
   const [statusModal, setStatusModal] = useState(false);
   const [memoModal, setMemoModal] = useState(false);
+  const [statusSaving, setStatusSaving] = useState(false);
 
   useEffect(() => {
     Promise.all([
       getCustomer(customerType, customerIdx),
-      getConsultLogs(customerType, customerIdx),
-      getConsultStatuses(),
+      getConsultLogs(customerType, customerIdx).catch(() => [] as ConsultLog[]),
+      getConsultStatuses().catch(() => [] as ConsultStatus[]),
+      getCustomerStatusHistory(customerType, customerIdx).catch(() => [] as StatusHistoryItem[]),
     ])
-      .then(([cust, logs, stats]) => {
+      .then(([cust, logs, stats, history]) => {
         setCustomer(cust);
         setConsultLogs(logs);
         setStatuses(stats);
+        setStatusHistory(history);
         if (cust) {
           setProgressStatus(cust.consultStatus);
+          setSavedStatus(cust.consultStatus);
           setMemoText(cust.memo ?? '');
         }
       })
+      .catch(() => {})
       .finally(() => setLoading(false));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const handleStatusSelect = (status: string) => {
     setProgressStatus(status);
-    setCustomer(prev => (prev ? { ...prev, consultStatus: status } : null));
-    updateConsultStatus(customerType, customerIdx, status);
   };
 
-  const handleMemoSave = () => {
-    updateCustomerMemo(customerType, customerIdx, memoText);
-    setCustomer(prev => (prev ? { ...prev, memo: memoText } : null));
-    setMemoModal(false);
+  const handleStatusSave = async () => {
+    setStatusSaving(true);
+    try {
+      await updateConsultStatus(customerType, customerIdx, progressStatus);
+      setSavedStatus(progressStatus);
+      setCustomer(prev =>
+        prev ? { ...prev, consultStatus: progressStatus } : null,
+      );
+      getCustomerStatusHistory(customerType, customerIdx)
+        .then(setStatusHistory)
+        .catch(() => {});
+      Alert.alert('완료', '상태가 변경되었습니다.');
+    } catch {
+      Alert.alert('오류', '상태 변경에 실패했습니다.');
+    } finally {
+      setStatusSaving(false);
+    }
+  };
+
+  const handleMemoSave = async () => {
+    try {
+      await updateCustomerMemo(customerType, customerIdx, memoText);
+      setCustomer(prev => (prev ? { ...prev, memo: memoText } : null));
+      setMemoModal(false);
+    } catch {
+      Alert.alert('오류', '메모 저장에 실패했습니다.');
+    }
   };
 
   // 최신 상담 이력
@@ -357,24 +384,6 @@ export default function CustomerInfo({ route, navigation }: Props) {
         <SubHeader
           headerLabel="고객 상세 정보"
           headerLeftOnPress={() => navigation.goBack()}
-          headerRightVisible={true}
-          headerRightContent={
-            <TouchableOpacity
-              onPress={() => setTooltipModal(true)}
-              style={{
-                width: '100%',
-                height: '100%',
-                paddingRight: 10,
-                alignItems: 'flex-end',
-                justifyContent: 'center',
-              }}
-            >
-              <Image
-                source={{ uri: BASE_URL + '/images/dot_menu_icon.png' }}
-                style={{ width: 3, height: 17, resizeMode: 'contain' }}
-              />
-            </TouchableOpacity>
-          }
         />
       }
     >
@@ -420,7 +429,45 @@ export default function CustomerInfo({ route, navigation }: Props) {
         </View>
 
         {/* 주소 / 이메일 */}
-        <View style={{ paddingTop: 15 }}>
+        <View style={{ paddingTop: 15, gap: 5 }}>
+          {customer.age && (
+            <View
+              style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}
+            >
+              <Image
+                source={{ uri: BASE_URL + '/images/birthday_icon.png' }}
+                style={{ width: 10, height: 10, resizeMode: 'contain' }}
+              />
+              <View style={{ width: width - 90 }}>
+                <CommonText
+                  labelText={`${customer.age}세`}
+                  labelTextStyle={[
+                    fonts.regular,
+                    { fontSize: 13, color: colors.gray9 },
+                  ]}
+                />
+              </View>
+            </View>
+          )}
+          {customer.job && (
+            <View
+              style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}
+            >
+              <Image
+                source={{ uri: BASE_URL + '/images/job_icon.png' }}
+                style={{ width: 10, height: 10, resizeMode: 'contain' }}
+              />
+              <View style={{ width: width - 90 }}>
+                <CommonText
+                  labelText={customer.job}
+                  labelTextStyle={[
+                    fonts.regular,
+                    { fontSize: 13, color: colors.gray9 },
+                  ]}
+                />
+              </View>
+            </View>
+          )}
           {customer.address && (
             <View
               style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}
@@ -440,46 +487,49 @@ export default function CustomerInfo({ route, navigation }: Props) {
               </View>
             </View>
           )}
-          {customer.email && (
+        </View>
+        {customer.familyConsult && (
+          <View style={[{ flexDirection: 'row', gap: 10, marginTop: 15 }]}>
             <View
               style={{
-                flexDirection: 'row',
-                alignItems: 'center',
-                gap: 8,
-                marginTop: 7,
+                paddingHorizontal: 12,
+                paddingVertical: 10,
+                borderRadius: 20,
+                backgroundColor: colors.primary3,
               }}
             >
-              <Image
-                source={{ uri: BASE_URL + '/images/memo_icon.png' }}
-                style={{ width: 10, height: 10, resizeMode: 'contain' }}
+              <CommonText
+                labelText="가족상담 신청"
+                style={[fonts.semiBold, { fontSize: 12, color: '#0480d8' }]}
               />
-              <View style={{ width: width - 90 }}>
-                <CommonText
-                  labelText={customer.email}
-                  labelTextStyle={[
-                    fonts.regular,
-                    { fontSize: 13, color: colors.gray9 },
-                  ]}
-                />
-              </View>
             </View>
-          )}
-        </View>
+          </View>
+        )}
 
         {/* 상세 정보 그리드 */}
-        <View style={{ flexDirection: 'row', gap: 5, flexWrap: 'wrap' }}>
-          {customer.dbGradeName && (
+        <View
+          style={{
+            flexDirection: 'row',
+            gap: 5,
+            flexWrap: 'wrap',
+            borderTopWidth: 1,
+            borderTopColor: colors.gray1,
+            marginTop: 15,
+          }}
+        >
+          {customer.productCategoryName != '' && (
             <View style={{ width: (width - 75) / 2, gap: 12, marginTop: 14 }}>
               <CommonText
-                labelText="DB 등급"
+                labelText="DB 종류"
                 labelTextStyle={[styles.infoLabel]}
               />
               <CommonText
-                labelText={customer.dbGradeName}
+                labelText={customer.productCategoryName ?? '-'}
                 labelTextStyle={[styles.infoText]}
               />
             </View>
           )}
+
           <View style={{ width: (width - 75) / 2, gap: 12, marginTop: 14 }}>
             <CommonText
               labelText="등록 일시"
@@ -531,7 +581,8 @@ export default function CustomerInfo({ route, navigation }: Props) {
               alignItems: 'center',
               justifyContent: 'space-between',
               borderWidth: 1,
-              borderColor: colors.gray3,
+              borderColor:
+                progressStatus !== savedStatus ? colors.primary : colors.gray3,
             }}
           >
             <CommonText
@@ -543,6 +594,28 @@ export default function CustomerInfo({ route, navigation }: Props) {
               style={{ width: 12, height: 8, resizeMode: 'contain' }}
             />
           </TouchableOpacity>
+          {progressStatus !== savedStatus && (
+            <TouchableOpacity
+              onPress={handleStatusSave}
+              disabled={statusSaving}
+              style={{
+                height: 44,
+                borderRadius: 8,
+                backgroundColor: colors.primary,
+                alignItems: 'center',
+                justifyContent: 'center',
+                opacity: statusSaving ? 0.6 : 1,
+              }}
+            >
+              <CommonText
+                labelText={statusSaving ? '저장 중...' : '수정하기'}
+                labelTextStyle={[
+                  fonts.semiBold,
+                  { fontSize: 15, color: '#fff' },
+                ]}
+              />
+            </TouchableOpacity>
+          )}
         </View>
       </View>
 
@@ -677,6 +750,41 @@ export default function CustomerInfo({ route, navigation }: Props) {
         />
       </View>
 
+      {/* ── 상태 변경 이력 ── */}
+      {statusHistory.length > 0 && (
+        <View style={[styles.infoWrap, { marginBottom: 16, gap: 10 }]}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 7, paddingBottom: 15, borderBottomWidth: 1, borderBottomColor: colors.gray1 }}>
+            <Image
+              source={{ uri: BASE_URL + '/images/history_arr.png' }}
+              style={{ width: 10, height: 12, resizeMode: 'contain' }}
+            />
+            <CommonText labelText="상태 변경 이력" labelTextStyle={[styles.labelText]} />
+          </View>
+          {statusHistory.map(item => (
+            <View key={item.idx} style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: colors.gray1 }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flex: 1 }}>
+                <CommonText
+                  labelText={item.prevStatus}
+                  labelTextStyle={[{ fontSize: 13, color: colors.gray6 }]}
+                />
+                <Image
+                  source={{ uri: BASE_URL + '/images/history_arr.png' }}
+                  style={{ width: 5, height: 6, resizeMode: 'contain' }}
+                />
+                <CommonText
+                  labelText={item.nextStatus}
+                  labelTextStyle={[fonts.medium, { fontSize: 13, color: colors.gray10 }]}
+                />
+              </View>
+              <CommonText
+                labelText={item.changedAt.slice(2, 10).replace(/-/g, '.')}
+                labelTextStyle={[{ fontSize: 12, color: colors.gray6 }]}
+              />
+            </View>
+          ))}
+        </View>
+      )}
+
       {/* ── 스케줄 (매니저 이상만) ── */}
       {isManager && (
         <View style={[styles.infoWrap, { marginBottom: 16, gap: 10 }]}>
@@ -700,61 +808,80 @@ export default function CustomerInfo({ route, navigation }: Props) {
               />
             </View>
           </View>
-          <View style={{ gap: 10 }}>
-            <CommonText
-              labelText={`${customer.name}님과 통화`}
-              labelTextStyle={[
-                fonts.semiBold,
-                { fontSize: 16, color: colors.gray10 },
-              ]}
-            />
-            <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+          {customer.latestSchedule ? (
+            <View style={{ gap: 10 }}>
               <CommonText
-                labelText={fmtDate(latestLog?.nextConsultDate)}
+                labelText={customer.latestSchedule.title}
                 labelTextStyle={[
-                  fonts.regular,
-                  { fontSize: 12, color: colors.primary },
+                  fonts.semiBold,
+                  { fontSize: 16, color: colors.gray10 },
                 ]}
               />
-              <View
-                style={{
-                  width: 1,
-                  height: 8,
-                  backgroundColor: colors.gray3,
-                  marginHorizontal: 5,
-                }}
-              />
-              <CommonText
-                labelText="10:00 AM"
-                labelTextStyle={[
-                  fonts.regular,
-                  { fontSize: 12, color: colors.primary },
-                ]}
-              />
-            </View>
-            {customer.address && (
-              <View
-                style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}
-              >
-                <Image
-                  source={{ uri: BASE_URL + '/images/address_icon_gray.png' }}
-                  style={{ width: 10, height: 10, resizeMode: 'contain' }}
+              <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                <CommonText
+                  labelText={fmtDate(customer.latestSchedule.scheduleDate)}
+                  labelTextStyle={[
+                    fonts.regular,
+                    { fontSize: 12, color: colors.primary },
+                  ]}
                 />
-                <View style={{ width: width - 90 }}>
-                  <CommonText
-                    labelText={customer.address}
-                    labelTextStyle={[
-                      fonts.regular,
-                      { fontSize: 13, color: colors.gray7 },
-                    ]}
-                  />
-                </View>
+                {customer.latestSchedule.scheduleTime && (
+                  <>
+                    <View
+                      style={{
+                        width: 1,
+                        height: 8,
+                        backgroundColor: colors.gray3,
+                        marginHorizontal: 5,
+                      }}
+                    />
+                    <CommonText
+                      labelText={customer.latestSchedule.scheduleTime}
+                      labelTextStyle={[
+                        fonts.regular,
+                        { fontSize: 12, color: colors.primary },
+                      ]}
+                    />
+                  </>
+                )}
               </View>
-            )}
-          </View>
+              {customer.latestSchedule.addr1 && (
+                <View
+                  style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}
+                >
+                  <Image
+                    source={{ uri: BASE_URL + '/images/address_icon_gray.png' }}
+                    style={{ width: 10, height: 10, resizeMode: 'contain' }}
+                  />
+                  <View style={{ width: width - 90 }}>
+                    <CommonText
+                      labelText={[
+                        customer.latestSchedule.addr1,
+                        customer.latestSchedule.addr2,
+                      ]
+                        .filter(Boolean)
+                        .join(' ')}
+                      labelTextStyle={[
+                        fonts.regular,
+                        { fontSize: 13, color: colors.gray7 },
+                      ]}
+                    />
+                  </View>
+                </View>
+              )}
+            </View>
+          ) : (
+            <CommonText
+              labelText="등록된 스케줄이 없습니다."
+              labelTextStyle={[{ fontSize: 14, color: colors.gray5 }]}
+            />
+          )}
           <View style={styles.mapWrap}>
             <WebView
-              source={{ uri: BASE_URL + '/map.html' }}
+              source={{
+                uri:
+                  BASE_URL + '/map.php?addr=' + customer.latestSchedule?.addr1,
+              }}
               style={{ flex: 1, borderRadius: 8 }}
               scrollEnabled={false}
               javaScriptEnabled
@@ -779,58 +906,6 @@ export default function CustomerInfo({ route, navigation }: Props) {
             onSelect={handleStatusSelect}
           />
         </SafeAreaProvider>
-      </Modal>
-
-      {/* ── 툴팁 모달 ── */}
-      <Modal
-        visible={tooltipModal}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setTooltipModal(false)}
-      >
-        <TouchableOpacity
-          style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.4)' }}
-          activeOpacity={1}
-          onPress={() => setTooltipModal(false)}
-        >
-          <View
-            style={{
-              alignItems: 'flex-start',
-              borderWidth: 1,
-              borderRadius: 8,
-              borderColor: colors.gray1,
-              position: 'absolute',
-              top: top + 58,
-              right: 20,
-              zIndex: 1,
-              overflow: 'hidden',
-              backgroundColor: colors.white,
-            }}
-          >
-            <TouchableOpacity
-              style={{
-                flexDirection: 'row',
-                alignItems: 'center',
-                gap: 10,
-                paddingVertical: 10,
-                paddingHorizontal: 16,
-                backgroundColor: colors.white,
-              }}
-            >
-              <CommonText
-                labelText="수정하기"
-                labelTextStyle={[
-                  fonts.medium,
-                  { color: colors.gray10, fontSize: 14 },
-                ]}
-              />
-              <Image
-                source={{ uri: BASE_URL + '/images/pencil_icon_gray.png' }}
-                style={{ width: 13, height: 13, resizeMode: 'contain' }}
-              />
-            </TouchableOpacity>
-          </View>
-        </TouchableOpacity>
       </Modal>
 
       {/* ── 메모 모달 ── */}

@@ -7,10 +7,12 @@ import { colors } from '../../constants/colors';
 import SubHeader from '../../components/SubHeader';
 import { MainStackParamList } from '../../navigation/types';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
+import { useFocusEffect } from '@react-navigation/native';
 import CategoryButton from '../../components/CategoryButton';
 import ClientBox from '../../components/ClientBox';
 import { getCustomers, getCustomersPaged } from '../../api/customer';
 import { Customer } from '../../types';
+import { useAuthStore } from '../../store';
 
 type Props = NativeStackScreenProps<MainStackParamList, 'ProgressList'>;
 
@@ -19,6 +21,7 @@ const PAGE_LIMIT = 20;
 
 export default function ProgressList({ route, navigation }: Props) {
   const { params } = route;
+  const user = useAuthStore(state => state.user);
 
   const scrollViewRef = useRef<ScrollView>(null);
   const itemPositions = useRef<Record<string, number>>({});
@@ -41,11 +44,6 @@ export default function ProgressList({ route, navigation }: Props) {
   const countByStatus = (statusName: string) =>
     allCustomers.filter(c => c.consultStatus === statusName).length;
 
-  // 카테고리 count 뱃지용 전체 로드
-  useEffect(() => {
-    getCustomers().then(setAllCustomers);
-  }, []);
-
   const fetchCustomers = useCallback(async (targetPage: number, reset: boolean) => {
     if (isFetchingRef.current) return;
     isFetchingRef.current = true;
@@ -53,6 +51,7 @@ export default function ProgressList({ route, navigation }: Props) {
     try {
       const res = await getCustomersPaged({
         consultStatus: selectCategory ?? '상담대기',
+        assignedAccountIdx: user?.idx ?? undefined,
         page: targetPage,
         limit: PAGE_LIMIT,
       });
@@ -67,9 +66,14 @@ export default function ProgressList({ route, navigation }: Props) {
     }
   }, [selectCategory]);
 
-  useEffect(() => {
-    fetchCustomers(1, true);
-  }, [fetchCustomers]);
+  useFocusEffect(
+    useCallback(() => {
+      if (user?.idx) {
+        getCustomers({ assignedAccountIdx: user.idx }).then(setAllCustomers).catch(() => {});
+      }
+      fetchCustomers(1, true);
+    }, [fetchCustomers, user?.idx]),
+  );
 
   const handleLoadMore = () => {
     if (!isLoading && customers.length < total) {

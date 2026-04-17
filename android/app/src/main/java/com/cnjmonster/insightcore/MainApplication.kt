@@ -1,4 +1,4 @@
-package com.insurancecnj
+package com.cnjmonster.insightcore
 
 import android.app.Application
 import com.facebook.react.PackageList

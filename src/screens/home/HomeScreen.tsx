@@ -1,8 +1,8 @@
 // src/screens/home/HomeScreen.tsx
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Image } from 'react-native';
 import { useAuthStore } from '../../store'; // ← 변경
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { MainStackParamList } from '../../navigation/types';
 import Layout from '../../components/Layout';
@@ -21,6 +21,7 @@ import { BASE_URL } from '../../api/util';
 import { BoardPostItem, DbStats } from '../../types';
 import { getBoardPosts } from '../../api/board';
 import { getDbStats } from '../../api/customer';
+import { getNotifications } from '../../api/notification';
 import { getPlanMenus, MenuCode } from '../../api/plan';
 
 type NavigationProp = NativeStackNavigationProp<
@@ -51,8 +52,6 @@ export default function HomeScreen() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [office?.planIdx, office?.planCode]);
 
-  console.log('user1', user);
-
   const hasMenu = (code: MenuCode) => planMenus.includes(code);
 
   const buttonWidth = hasMenu('schedule') ? (width - 40) / 4 : (width - 41) / 3;
@@ -63,20 +62,28 @@ export default function HomeScreen() {
 
   const [recentPosts, setRecentPosts] = useState<BoardPostItem[]>([]);
   const [dbStats, setDbStats] = useState<DbStats | null>(null);
+  const [hasUnread, setHasUnread] = useState(false);
 
-  useEffect(() => {
-    getBoardPosts({ boardType: 'general', limit: 2 }).then(res =>
-      setRecentPosts(res.posts.slice(0, 2)),
-    );
-  }, []);
+  useFocusEffect(
+    useCallback(() => {
+      getBoardPosts({ boardType: 'general', limit: 2 })
+        .then(res => setRecentPosts(res.posts.slice(0, 2)))
+        .catch(() => {});
+      getNotifications()
+        .then(list => setHasUnread(list.some(n => !n.isRead)))
+        .catch(() => {});
+    }, []),
+  );
 
   const today = new Date();
   const [currentYear, setCurrentYear] = useState(today.getFullYear());
   const [currentMonth, setCurrentMonth] = useState(today.getMonth() + 1); // 1~12
 
   useEffect(() => {
-    getDbStats(currentYear, currentMonth).then(setDbStats);
-  }, [currentYear, currentMonth]);
+    getDbStats(currentYear, currentMonth, user?.idx ?? undefined)
+      .then(setDbStats)
+      .catch(() => {});
+  }, [currentYear, currentMonth, user?.idx]);
 
   const isNextDisabled =
     currentYear === today.getFullYear() &&
@@ -125,19 +132,21 @@ export default function HomeScreen() {
                 source={{ uri: BASE_URL + '/images/hd_bell.png' }}
                 style={{ width: 20, height: 20, resizeMode: 'contain' }}
               />
-              <View
-                style={{
-                  width: 10,
-                  height: 10,
-                  borderRadius: 10,
-                  borderWidth: 1,
-                  borderColor: colors.white,
-                  backgroundColor: colors.mainRed,
-                  position: 'absolute',
-                  top: 12,
-                  right: 0,
-                }}
-              ></View>
+              {hasUnread && (
+                <View
+                  style={{
+                    width: 10,
+                    height: 10,
+                    borderRadius: 10,
+                    borderWidth: 1,
+                    borderColor: colors.white,
+                    backgroundColor: colors.mainRed,
+                    position: 'absolute',
+                    top: 12,
+                    right: 0,
+                  }}
+                />
+              )}
             </TouchableOpacity>
           }
         />
@@ -226,19 +235,19 @@ export default function HomeScreen() {
             >
               <DonutChart
                 value={dbStats?.usedCount ?? 0}
-                total={dbStats?.totalCount ?? 1}
+                total={dbStats?.totalCount || 0}
                 unit="percent"
                 label="사용 DB"
               />
               <DonutChart
                 value={dbStats?.meetingCount ?? 0}
-                total={dbStats?.totalCount ?? 1}
+                total={dbStats?.totalCount || 0}
                 unit="fraction"
                 label="미팅완료"
               />
               <DonutChart
                 value={dbStats?.contractCount ?? 0}
-                total={dbStats?.totalCount ?? 1}
+                total={dbStats?.totalCount || 0}
                 unit="fraction"
                 label="계약완료"
               />

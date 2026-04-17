@@ -1,4 +1,4 @@
-package com.insurancecnj
+package com.cnjmonster.insightcore
 
 import com.facebook.react.ReactActivity
 import com.facebook.react.ReactActivityDelegate

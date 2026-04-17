@@ -106,6 +106,7 @@ export default function BoardForm({ navigation }: Props) {
 
     const selectedCategory = categories.find(c => c.name === category);
     try {
+      console.log('fileData', fileData);
       await createBoardPost({
         boardType: 'free',
         categoryIdx: selectedCategory?.idx ?? null,

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Modal,
   View,
@@ -6,17 +6,15 @@ import {
   TouchableOpacity,
   StyleSheet,
   Platform,
+  ActivityIndicator,
 } from 'react-native';
 import { colors } from '../constants/colors';
 import { fonts } from '../constants/fonts';
 import CommonText from './CommonText';
 import SearchInput from './SearchInput';
-
-interface Customer {
-  idx: string;
-  name: string;
-  phone: string;
-}
+import { getCustomers } from '../api/customer';
+import { Customer } from '../types';
+import { useAuthStore } from '../store';
 
 interface Props {
   visible: boolean;
@@ -24,29 +22,42 @@ interface Props {
   onSelect: (customer: Customer) => void;
 }
 
-// 목데이터 - 추후 API 연동 시 교체
-const MOCK_CUSTOMERS: Customer[] = [
-  { idx: '1', name: '홍길동', phone: '010-1234-5678' },
-  { idx: '2', name: '김철수', phone: '010-2345-6789' },
-  { idx: '3', name: '이영희', phone: '010-3456-7890' },
-  { idx: '4', name: '박민준', phone: '010-4567-8901' },
-  { idx: '5', name: '최지원', phone: '010-5678-9012' },
-  { idx: '6', name: '정수현', phone: '010-6789-0123' },
-];
-
 export default function CustomerSearchModal({
   visible,
   onClose,
   onSelect,
 }: Props) {
+  const user = useAuthStore(state => state.user);
   const [searchText, setSearchText] = useState('');
+  const [allCustomers, setAllCustomers] = useState<Customer[]>([]);
+  const [loading, setLoading] = useState(false);
 
-  const filteredList = MOCK_CUSTOMERS.filter(
-    c => c.name.includes(searchText) || c.phone.includes(searchText),
-  );
+  // 모달 열릴 때 고객 목록 로드
+  useEffect(() => {
+    if (!visible || !user?.idx) return;
+    setLoading(true);
+    getCustomers({ assignedAccountIdx: user.idx })
+      .then(data => setAllCustomers(data))
+      .catch(() => setAllCustomers([]))
+      .finally(() => setLoading(false));
+  }, [visible, user?.idx]);
+
+  const filteredList = allCustomers.filter(c => {
+    const kw = searchText.trim().toLowerCase();
+    if (!kw) return true;
+    return (
+      c.name.toLowerCase().includes(kw) ||
+      (c.phone ?? '').includes(kw)
+    );
+  });
 
   const handleSelect = (customer: Customer) => {
     onSelect(customer);
+    setSearchText('');
+    onClose();
+  };
+
+  const handleClose = () => {
     setSearchText('');
     onClose();
   };
@@ -56,12 +67,12 @@ export default function CustomerSearchModal({
       visible={visible}
       transparent
       animationType="fade"
-      onRequestClose={onClose}
+      onRequestClose={handleClose}
     >
       <TouchableOpacity
         style={styles.overlay}
         activeOpacity={1}
-        onPress={onClose}
+        onPress={handleClose}
       >
         <TouchableOpacity activeOpacity={1} style={styles.container}>
           {/* 헤더 */}
@@ -87,49 +98,57 @@ export default function CustomerSearchModal({
           </View>
 
           {/* 리스트 */}
-          <FlatList
-            data={filteredList}
-            keyExtractor={item => item.idx}
-            style={{ flex: 1 }}
-            ListEmptyComponent={
-              <View style={styles.emptyWrap}>
-                <CommonText
-                  labelText="검색 결과가 없습니다."
-                  labelTextStyle={[{ fontSize: 15, color: colors.gray5 }]}
-                />
-              </View>
-            }
-            renderItem={({ item }) => (
-              <TouchableOpacity
-                style={styles.item}
-                onPress={() => handleSelect(item)}
-                activeOpacity={0.7}
-              >
-                <View style={{ gap: 5 }}>
+          {loading ? (
+            <View style={styles.emptyWrap}>
+              <ActivityIndicator color={colors.primary} />
+            </View>
+          ) : (
+            <FlatList
+              data={filteredList}
+              keyExtractor={item => `${item.customerType}-${item.idx}`}
+              style={{ flex: 1 }}
+              ListEmptyComponent={
+                <View style={styles.emptyWrap}>
                   <CommonText
-                    labelText={item.name}
-                    labelTextStyle={[
-                      fonts.semiBold,
-                      { fontSize: 16, color: colors.gray10 },
-                    ]}
-                  />
-                  <CommonText
-                    labelText={item.phone}
-                    labelTextStyle={[{ fontSize: 13, color: colors.gray6 }]}
+                    labelText="검색 결과가 없습니다."
+                    labelTextStyle={[{ fontSize: 15, color: colors.gray5 }]}
                   />
                 </View>
-              </TouchableOpacity>
-            )}
-            ItemSeparatorComponent={() => (
-              <View
-                style={{
-                  height: 1,
-                  backgroundColor: colors.gray1,
-                  marginHorizontal: 20,
-                }}
-              />
-            )}
-          />
+              }
+              renderItem={({ item }) => (
+                <TouchableOpacity
+                  style={styles.item}
+                  onPress={() => handleSelect(item)}
+                  activeOpacity={0.7}
+                >
+                  <View style={{ gap: 5 }}>
+                    <CommonText
+                      labelText={item.name}
+                      labelTextStyle={[
+                        fonts.semiBold,
+                        { fontSize: 16, color: colors.gray10 },
+                      ]}
+                    />
+                    {item.phone ? (
+                      <CommonText
+                        labelText={item.phone}
+                        labelTextStyle={[{ fontSize: 13, color: colors.gray6 }]}
+                      />
+                    ) : null}
+                  </View>
+                </TouchableOpacity>
+              )}
+              ItemSeparatorComponent={() => (
+                <View
+                  style={{
+                    height: 1,
+                    backgroundColor: colors.gray1,
+                    marginHorizontal: 20,
+                  }}
+                />
+              )}
+            />
+          )}
         </TouchableOpacity>
       </TouchableOpacity>
     </Modal>

@@ -1,27 +1,70 @@
 // ─── 정산 (tbl_settlements / tbl_settlement_db_details) ───────────────────────
 
-// tbl_settlements
-export type SettlementType = 'db_sales' | 'system_fee' | 'total';
+export type SettlementType = 'db_sales' | 'system_fee';
 export type SettlementStatus = '미확정' | '확정';
 
-// tbl_settlement_db_details — 행 단위 정산 내역 (API가 고객 이름 join)
-export interface AdjustmentItem {
+// GET /api/app/settlements/db  —  목록 행
+export interface DbSettlement {
   idx: number;
-  settlementMonth: string;   // YYYY-MM
-  date: string;              // MM.DD 표시용
-  customerName: string;      // tbl_office_customers join
-  dbGradeName: string;       // tbl_settlement_db_details.db_grade_name
-  type: string;              // 계약완료 등 종류
-  unitPrice: number;         // unit_price
-  asExcluded: boolean;       // AS 제외 여부
-  amount: number;            // 실 정산액
+  settlement_month: string;    // YYYY-MM
+  type: SettlementType;
+  total_amount: number;
+  status: SettlementStatus;
+  confirmed_at: string | null;
+  office_name: string;
+  total_distribute: number;    // SUM(distribute_count)
+  total_as_exclude: number;    // SUM(as_exclude_count)
+  total_net: number;           // SUM(net_count)
 }
 
-// 정산 요약 (화면 상단 표시)
-export interface AdjustmentSummary {
-  totalAmount: number;
-  status: SettlementStatus;
-  items: AdjustmentItem[];
+// GET /api/app/settlements/db/{idx}  —  상세 행 (tbl_settlement_db_details)
+export interface DbSettlementDetail {
+  idx: number;
+  settlement_idx: number;
+  db_grade_name: string;
+  unit_price: number;
+  distribute_count: number;
+  as_exclude_count: number;
+  net_count: number;
+  amount: number;
+}
+
+// GET /api/app/settlements/system/{idx}  —  시스템 이용료 상세
+export interface SystemFeeDetail {
+  idx: number;
+  settlement_idx: number;
+  setup_fee: number;
+  monthly_fee: number;
+  extra_persons: number;
+  extra_person_fee: number;
+  total_amount: number;
+}
+
+// tbl_settlement_fee_tiers
+export interface FeeTier {
+  idx: number;
+  fee_detail_idx: number;
+  min_count: number;
+  max_count: number | null;
+  person_count: number;
+  unit_price: number;
+  amount: number;
+}
+
+// GET /api/app/settlements/total  —  통합 정산
+export interface TotalSettlementRow {
+  office_idx: number;
+  office_name: string;
+  settlement_month: string;
+  db_amount: number;
+  fee_amount: number;
+  grand_total: number;
+}
+
+export interface TotalSettlementSummary {
+  db_total: number;
+  fee_total: number;
+  grand_total: number;
 }
 
 // ─── DB관리 (tbl_office_customers / tbl_self_customers / tbl_consult_logs) ───
@@ -37,14 +80,32 @@ export interface Customer {
   email: string | null;
   address: string | null;
   memo: string | null;
+  gender: string | null;
+  birthDate: string | null;
+  age: number | null;
+  job: string | null;
+  familyConsult: boolean;
+  productCategoryIdx: number | null;
+  productCategoryName: string | null;
   dbGradeIdx?: number | null;
-  dbGradeName?: string | null;       // office 고객만 존재
-  consultStatus: string;             // tbl_consult_statuses.name 값
+  dbGradeName?: string | null;       // office 고객만
+  consultStatus: string;
   assignedAccountIdx: number | null;
   assignedAccountName?: string | null;
-  distributeAt?: string | null;      // office 고객만 존재
+  distributeAt?: string | null;      // office 고객만
   createdAt: string;
   updatedAt: string;
+  latestSchedule?: {
+    idx: number;
+    title: string;
+    content: string | null;
+    scheduleDate: string;
+    scheduleTime: string | null;
+    addr1: string | null;
+    addr2: string | null;
+    isImportant: string | null;
+    createdAt: string;
+  } | null;
 }
 
 // tbl_consult_statuses
@@ -251,9 +312,10 @@ export interface MonthlyEvalStat {
 // 카테고리별 평가 상세 — 레이더차트용
 export interface CategoryEvalStat {
   categoryName: string;
-  myScore: number;
-  groupAverage: number;
+  myScore: number;       // 0~100 퍼센트 (레이더 폴리곤용)
+  groupAverage: number;  // 0~100 퍼센트
   maxScore: number;
+  rawMyScore?: number;   // 원점수 (라벨 표시용)
 }
 
 // StatScreen 전체 응답

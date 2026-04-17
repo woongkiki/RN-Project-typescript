@@ -13,3 +13,15 @@
 -keep class com.facebook.soloader.** { *; }
 -keep class com.facebook.jni.** { *; }
 -keep class com.doublesymmetry.trackplayer.** { *; }
+
+# OkHttp
+-dontwarn okhttp3.**
+-keep class okhttp3.** { *; }
+-keep interface okhttp3.** { *; }
+
+# OkIO
+-dontwarn okio.**
+-keep class okio.** { *; }
+
+# React Native 네트워크
+-keep class com.facebook.react.modules.network.** { *; }

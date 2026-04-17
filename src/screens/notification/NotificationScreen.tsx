@@ -61,7 +61,7 @@ export default function NotificationScreen() {
 
   useEffect(() => {
     getNotifications()
-      .then(setNotifications)
+      .then(data => setNotifications(Array.isArray(data) ? data : []))
       .finally(() => setLoading(false));
   }, []);
 
