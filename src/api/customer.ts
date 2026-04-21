@@ -6,6 +6,7 @@ import {
   DbStats,
   ProgressCounts,
   StatusHistoryItem,
+  AudioTtsItem,
 } from '../types';
 import { BASE_URL2 } from './util';
 import { useAuthStore } from '../store';
@@ -358,6 +359,29 @@ export async function addConsultLog(params: {
   );
   const raw = data?.log ?? data;
   return mapConsultLog(raw);
+}
+
+/** 오디오 자막 조회 */
+export async function getAudioTts(
+  customerType: CustomerType,
+  idx: number,
+): Promise<AudioTtsItem[]> {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const data = await customerFetch<any>(
+    `${BASE_URL2}/api/app/customers/${customerType}/${idx}/audio-tts`,
+  );
+  const list = Array.isArray(data) ? data : data?.tts ?? [];
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  return list.map((r: any) => ({
+    id: r.id,
+    audioFile: r.audioFile,
+    sequenceNo: r.sequenceNo,
+    transcript: r.transcript,
+    startTime: r.startTime,
+    endTime: r.endTime,
+    confidence: r.confidence ?? null,
+    createdAt: r.createdAt,
+  }));
 }
 
 /** 전체 상태 변경 이력 (DBScreen 변경이력) — order desc|asc */

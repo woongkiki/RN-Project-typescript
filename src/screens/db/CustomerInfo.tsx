@@ -35,8 +35,15 @@ import {
   updateConsultStatus,
   updateCustomerMemo,
   getCustomerStatusHistory,
+  getAudioTts,
 } from '../../api/customer';
-import { Customer, ConsultLog, ConsultStatus, StatusHistoryItem, ROLE_LEVEL } from '../../types';
+import {
+  Customer,
+  ConsultLog,
+  ConsultStatus,
+  StatusHistoryItem,
+  AudioTtsItem,
+} from '../../types';
 
 type Props = NativeStackScreenProps<MainStackParamList, 'CustomerInfo'>;
 
@@ -277,6 +284,7 @@ export default function CustomerInfo({ route, navigation }: Props) {
   const [progressStatus, setProgressStatus] = useState('');
   const [memoText, setMemoText] = useState('');
   const [statusHistory, setStatusHistory] = useState<StatusHistoryItem[]>([]);
+  const [ttsItems, setTtsItems] = useState<AudioTtsItem[]>([]);
 
   const [savedStatus, setSavedStatus] = useState('');
   const [statusModal, setStatusModal] = useState(false);
@@ -288,13 +296,21 @@ export default function CustomerInfo({ route, navigation }: Props) {
       getCustomer(customerType, customerIdx),
       getConsultLogs(customerType, customerIdx).catch(() => [] as ConsultLog[]),
       getConsultStatuses().catch(() => [] as ConsultStatus[]),
-      getCustomerStatusHistory(customerType, customerIdx).catch(() => [] as StatusHistoryItem[]),
+      getCustomerStatusHistory(customerType, customerIdx).catch(
+        () => [] as StatusHistoryItem[],
+      ),
+      getAudioTts(customerType, customerIdx).catch(e => {
+        console.warn('[TTS] fetch error:', e);
+        return [] as AudioTtsItem[];
+      }),
     ])
-      .then(([cust, logs, stats, history]) => {
+      .then(([cust, logs, stats, history, tts]) => {
+        console.log('[TTS] items:', tts.length, tts);
         setCustomer(cust);
         setConsultLogs(logs);
         setStatuses(stats);
         setStatusHistory(history);
+        setTtsItems(tts);
         if (cust) {
           setProgressStatus(cust.consultStatus);
           setSavedStatus(cust.consultStatus);
@@ -626,8 +642,9 @@ export default function CustomerInfo({ route, navigation }: Props) {
           labelTextStyle={[fonts.medium, { fontSize: 14 }]}
         />
         <AudioPlayer
-          url="https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3"
+          url="https://cnj0005.cafe24.com/audio/sample_audio.wav"
           title="상담 녹취"
+          ttsItems={ttsItems}
           onPositionChange={() => {}}
         />
       </View>
@@ -753,16 +770,45 @@ export default function CustomerInfo({ route, navigation }: Props) {
       {/* ── 상태 변경 이력 ── */}
       {statusHistory.length > 0 && (
         <View style={[styles.infoWrap, { marginBottom: 16, gap: 10 }]}>
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 7, paddingBottom: 15, borderBottomWidth: 1, borderBottomColor: colors.gray1 }}>
+          <View
+            style={{
+              flexDirection: 'row',
+              alignItems: 'center',
+              gap: 7,
+              paddingBottom: 15,
+              borderBottomWidth: 1,
+              borderBottomColor: colors.gray1,
+            }}
+          >
             <Image
               source={{ uri: BASE_URL + '/images/history_arr.png' }}
               style={{ width: 10, height: 12, resizeMode: 'contain' }}
             />
-            <CommonText labelText="상태 변경 이력" labelTextStyle={[styles.labelText]} />
+            <CommonText
+              labelText="상태 변경 이력"
+              labelTextStyle={[styles.labelText]}
+            />
           </View>
           {statusHistory.map(item => (
-            <View key={item.idx} style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: colors.gray1 }}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flex: 1 }}>
+            <View
+              key={item.idx}
+              style={{
+                flexDirection: 'row',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                paddingVertical: 8,
+                borderBottomWidth: 1,
+                borderBottomColor: colors.gray1,
+              }}
+            >
+              <View
+                style={{
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  gap: 6,
+                  flex: 1,
+                }}
+              >
                 <CommonText
                   labelText={item.prevStatus}
                   labelTextStyle={[{ fontSize: 13, color: colors.gray6 }]}
@@ -773,7 +819,10 @@ export default function CustomerInfo({ route, navigation }: Props) {
                 />
                 <CommonText
                   labelText={item.nextStatus}
-                  labelTextStyle={[fonts.medium, { fontSize: 13, color: colors.gray10 }]}
+                  labelTextStyle={[
+                    fonts.medium,
+                    { fontSize: 13, color: colors.gray10 },
+                  ]}
                 />
               </View>
               <CommonText

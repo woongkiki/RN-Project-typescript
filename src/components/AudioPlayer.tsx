@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   View,
   TouchableOpacity,
@@ -8,20 +8,24 @@ import {
 } from 'react-native';
 import TrackPlayer, {
   Capability,
+  Event,
   State,
   usePlaybackState,
   useProgress,
+  useTrackPlayerEvents,
   AppKilledPlaybackBehavior,
   RepeatMode,
 } from 'react-native-track-player';
 import CommonText from './CommonText';
 import { colors } from '../constants/colors';
 import { fonts } from '../constants/fonts';
+import { AudioTtsItem } from '../types';
 
 interface Props {
   // 실제 서버 URL 또는 로컬 파일 경로
   url: string;
   title?: string;
+  ttsItems?: AudioTtsItem[];
   // 자막 싱크를 위한 콜백 (추후 자막 기능 추가 시 사용)
   onPositionChange?: (position: number) => void;
 }
@@ -37,31 +41,36 @@ const formatTime = (seconds: number): string => {
   return `${mins}:${secs}`;
 };
 
-let isPlayerSetup = false;
+let setupPlayerPromise: Promise<void> | null = null;
 
-const setupPlayer = async () => {
-  if (isPlayerSetup) return;
-  await TrackPlayer.setupPlayer();
-  await TrackPlayer.updateOptions({
-    android: {
-      // 앱 종료 시 재생 중단 (녹취 파일 특성상 종료 시 멈추는 게 자연스러움)
-      appKilledPlaybackBehavior:
-        AppKilledPlaybackBehavior.StopPlaybackAndRemoveNotification,
-    },
-    capabilities: [Capability.Play, Capability.Pause, Capability.SeekTo],
-    // compactCapabilities: [Capability.Play, Capability.Pause],
-    notificationCapabilities: [
-      Capability.Play,
-      Capability.Pause,
-      Capability.SeekTo,
-    ],
-  });
-  isPlayerSetup = true;
+const setupPlayer = (): Promise<void> => {
+  if (setupPlayerPromise) return setupPlayerPromise;
+  setupPlayerPromise = (async () => {
+    try {
+      await TrackPlayer.setupPlayer();
+    } catch {
+      // 이미 초기화된 경우 무시
+    }
+    await TrackPlayer.updateOptions({
+      android: {
+        appKilledPlaybackBehavior:
+          AppKilledPlaybackBehavior.StopPlaybackAndRemoveNotification,
+      },
+      capabilities: [Capability.Play, Capability.Pause, Capability.SeekTo],
+      notificationCapabilities: [
+        Capability.Play,
+        Capability.Pause,
+        Capability.SeekTo,
+      ],
+    });
+  })();
+  return setupPlayerPromise;
 };
 
 export default function AudioPlayer({
   url,
   title = '상담 녹취',
+  ttsItems,
   onPositionChange,
 }: Props) {
   const playbackState = usePlaybackState();
@@ -81,16 +90,33 @@ export default function AudioPlayer({
     playbackState.state === undefined;
 
   const [trackLoaded, setTrackLoaded] = useState(false);
-  // const [barWidth, setBarWidth] = useState(0);
+  const [currentTranscript, setCurrentTranscript] = useState<string | null>(null);
+  const [hasEnded, setHasEnded] = useState(false);
+  const [hasStarted, setHasStarted] = useState(false);
   const barWidthRef = useRef(0);
   const isDragging = useRef(false);
-  const [isDraggingState, setIsDraggingState] = useState(false); // ✅ 추가
+  const [isDraggingState, setIsDraggingState] = useState(false);
   const [dragPosition, setDragPosition] = useState(0);
 
-  // ✅ position 변경 시 자막 콜백 호출
+  // 재생 종료 시 강제 정지 + 게이지 리셋 + 자막 박스 숨김 (Android 포함)
+  useTrackPlayerEvents([Event.PlaybackQueueEnded], async () => {
+    await TrackPlayer.pause();
+    await TrackPlayer.seekTo(0);
+    setHasEnded(true);
+    setCurrentTranscript(null);
+  });
+
+  // position 변경 시 자막 콜백 + 현재 자막 계산
   useEffect(() => {
-    if (onPositionChange && !isDragging.current) {
+    if (isDragging.current) return;
+    if (onPositionChange) {
       onPositionChange(position);
+    }
+    if (ttsItems && ttsItems.length > 0) {
+      const matched = ttsItems.find(
+        item => position >= item.startTime && position < item.endTime,
+      );
+      setCurrentTranscript(matched?.transcript ?? null);
     }
   }, [position]);
 
@@ -121,6 +147,8 @@ export default function AudioPlayer({
     if (isPlaying) {
       await TrackPlayer.pause();
     } else {
+      setHasEnded(false);
+      setHasStarted(true);
       await TrackPlayer.play();
     }
   };
@@ -173,69 +201,78 @@ export default function AudioPlayer({
     : 0;
 
   return (
-    <View style={styles.container}>
-      {/* 재생/정지 버튼 */}
-      <TouchableOpacity
-        onPress={togglePlayback}
-        style={styles.playButton}
-        disabled={isLoading}
-      >
-        <CommonText
-          labelText={isLoading ? '...' : isPlaying ? '⏸' : '▶'}
-          labelTextStyle={[
-            fonts.bold,
-            {
-              fontSize: isLoading ? 14 : 20,
-              color: isLoading ? colors.gray5 : colors.primary,
-            },
-          ]}
-        />
-      </TouchableOpacity>
-
-      {/* 프로그레스바 + 시간 */}
-      <View style={styles.rightArea}>
-        {/* ✅ 드래그 가능한 프로그레스바 */}
-        <View
-          style={styles.progressBarWrap}
-          onLayout={onBarLayout}
-          {...panResponder.panHandlers}
+    <View>
+      <View style={styles.container}>
+        {/* 재생/정지 버튼 */}
+        <TouchableOpacity
+          onPress={togglePlayback}
+          style={styles.playButton}
+          disabled={isLoading}
         >
-          <View style={styles.progressBarBg}>
-            <View
-              style={[
-                styles.progressBarFill,
-                { width: `${progressRatio * 100}%` },
-              ]}
+          <CommonText
+            labelText={isLoading ? '...' : isPlaying ? '⏸' : '▶'}
+            labelTextStyle={[
+              fonts.bold,
+              {
+                fontSize: isLoading ? 14 : 20,
+                color: isLoading ? colors.gray5 : colors.primary,
+              },
+            ]}
+          />
+        </TouchableOpacity>
+
+        {/* 프로그레스바 + 시간 */}
+        <View style={styles.rightArea}>
+          {/* ✅ 드래그 가능한 프로그레스바 */}
+          <View
+            style={styles.progressBarWrap}
+            onLayout={onBarLayout}
+            {...panResponder.panHandlers}
+          >
+            <View style={styles.progressBarBg}>
+              <View
+                style={[
+                  styles.progressBarFill,
+                  { width: `${progressRatio * 100}%` },
+                ]}
+              />
+              {/* 핸들 */}
+              <View
+                style={[
+                  styles.progressHandle,
+                  { left: `${progressRatio * 100}%` },
+                ]}
+              />
+            </View>
+          </View>
+
+          {/* 시간 표시 */}
+          <View style={styles.timeRow}>
+            <CommonText
+              labelText={formatTime(
+                isDraggingState
+                  ? dragPosition * durationRef.current
+                  : position,
+              )}
+              labelTextStyle={[styles.timeText]}
             />
-            {/* 핸들 */}
-            <View
-              style={[
-                styles.progressHandle,
-                { left: `${progressRatio * 100}%` },
-              ]}
+            <CommonText
+              labelText={formatTime(duration)}
+              labelTextStyle={[styles.timeText, { color: colors.gray5 }]}
             />
           </View>
         </View>
+      </View>
 
-        {/* 시간 표시 */}
-        <View style={styles.timeRow}>
+      {/* 자막 영역 — 최초 재생 후 표시, 종료 시 숨김 */}
+      {ttsItems && ttsItems.length > 0 && hasStarted && !hasEnded && (
+        <View style={styles.subtitleWrap}>
           <CommonText
-            // labelText={formatTime(
-            //   isDragging.current ? dragPosition * duration : position,
-            // )}
-            labelText={formatTime(
-              isDraggingState // ✅
-                ? dragPosition * durationRef.current
-                : position,
-            )}
-            labelTextStyle={[styles.timeText]}
-          />
-          <CommonText
-            labelText={formatTime(duration)}
-            labelTextStyle={[styles.timeText, { color: colors.gray5 }]}
+            labelText={currentTranscript ?? ''}
+            labelTextStyle={[styles.subtitleText]}
           />
         </View>
-      </View>
+      )}
     </View>
   );
 }
@@ -298,5 +335,22 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: colors.gray7,
     ...fonts.medium,
+  },
+  subtitleWrap: {
+    marginTop: 8,
+    minHeight: 36,
+    backgroundColor: colors.gray0,
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  subtitleText: {
+    fontSize: 13,
+    color: colors.gray9,
+    textAlign: 'center',
+    lineHeight: 20,
+    ...fonts.regular,
   },
 });

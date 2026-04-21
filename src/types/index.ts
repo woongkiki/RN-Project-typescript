@@ -133,6 +133,18 @@ export interface ConsultLog {
   updatedAt: string;
 }
 
+// tbl_audio_tts — 상담 녹취 자막
+export interface AudioTtsItem {
+  id: number;
+  audioFile: string;
+  sequenceNo: number;
+  transcript: string;
+  startTime: number;
+  endTime: number;
+  confidence: number | null;
+  createdAt: string;
+}
+
 // 상태 변경 이력 (변경 이력 테이블용)
 export interface StatusHistoryItem {
   idx: number;

@@ -258,6 +258,19 @@ CREATE TABLE IF NOT EXISTS `tbl_schedules` (
     KEY `idx_schedules_date` (`schedule_date`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- 오디오 자막
+CREATE TABLE tbl_audio_tts (
+    id            INT AUTO_INCREMENT PRIMARY KEY,
+    cusomter_idx  INT(11) NOT NULL COMMENT '고객 idx',
+    audio_file    VARCHAR(255)   NOT NULL COMMENT '원본 파일명',
+    sequence_no   INT            NOT NULL COMMENT '자막 순서',
+    transcript    TEXT           NOT NULL COMMENT '자막 텍스트',
+    start_time    DECIMAL(10,3)  NOT NULL COMMENT '시작 시간(초)',
+    end_time      DECIMAL(10,3)  NOT NULL COMMENT '종료 시간(초)',
+    confidence    DECIMAL(5,4)   DEFAULT NULL COMMENT '인식 신뢰도',
+    created_at    TIMESTAMP      DEFAULT CURRENT_TIMESTAMP
+);
+
 -- ------------------------------------------------------------
 -- [B-CS관리] 영업점 AS 접수
 -- ------------------------------------------------------------
