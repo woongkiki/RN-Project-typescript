@@ -45,7 +45,7 @@ export default function SeminarScreen({ navigation }: Props) {
     getSeminarPosts({
       categoryIdx: selectedCategoryIdx,
       keyword: schText,
-    }).then(setSeminarData);
+    }).then(result => setSeminarData(result.seminars));
   }, [selectedCategoryIdx, schText]);
 
   const selectedCategoryName =
@@ -71,20 +71,19 @@ export default function SeminarScreen({ navigation }: Props) {
         marginBottom: 25,
       }}
     >
-      <Image
-        source={{
-          uri:
-            item.thumbnailUrl != ''
-              ? item.thumbnailUrl
-              : 'https://picsum.photos/200',
-        }}
-        style={{
-          width: '100%',
-          height: 120,
-          resizeMode: 'stretch',
-          borderRadius: 10,
-        }}
-      />
+      {item.thumbnailUrl ? (
+        <Image
+          source={{ uri: item.thumbnailUrl }}
+          style={{ width: '100%', height: 120, resizeMode: 'cover', borderRadius: 10 }}
+        />
+      ) : (
+        <View style={{ width: '100%', height: 120, borderRadius: 10, backgroundColor: colors.gray2, alignItems: 'center', justifyContent: 'center' }}>
+          <Image
+            source={{ uri: BASE_URL + '/images/app_logo.png' }}
+            style={{ width: '70%', height: '60%', resizeMode: 'contain' }}
+          />
+        </View>
+      )}
       <View style={{ marginTop: 10, gap: 8 }}>
         <CommonText
           labelText={toDeadline(item.deadline)}
@@ -195,7 +194,10 @@ export default function SeminarScreen({ navigation }: Props) {
         contentContainerStyle={{ paddingHorizontal: 20 }}
         ListEmptyComponent={
           <View style={{ flex: 1, alignItems: 'center', marginTop: 60 }}>
-            <CommonText labelText="게시글이 없습니다" labelTextStyle={{ color: '#999', fontSize: 14 }} />
+            <CommonText
+              labelText="게시글이 없습니다"
+              labelTextStyle={{ color: '#999', fontSize: 14 }}
+            />
           </View>
         }
       />

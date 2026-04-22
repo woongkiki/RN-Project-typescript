@@ -1,11 +1,15 @@
 import React, { useEffect, useRef } from 'react';
-import { View, StyleSheet, Animated } from 'react-native';
+import { View, StyleSheet, Animated, Image } from 'react-native';
 import CommonText from '../../components/CommonText';
 import { fonts } from '../../constants/fonts';
 import { colors } from '../../constants/colors';
+import { BASE_URL } from '../../api/util';
+import { useAuthStore } from '../../store';
+import { getMeApi } from '../../api/auth';
 
 export default function IntroScreen() {
   const progress = useRef(new Animated.Value(0)).current;
+  const { isAuthenticated, token, setAuth, isHydrated } = useAuthStore();
 
   useEffect(() => {
     Animated.timing(progress, {
@@ -15,6 +19,16 @@ export default function IntroScreen() {
     }).start();
   }, [progress]);
 
+  // hydration 완료 후에 계정 정보 갱신 (타이밍 보장)
+  useEffect(() => {
+    if (!isHydrated || !isAuthenticated || !token) return;
+    getMeApi(token)
+      .then(({ user }) => setAuth(user, token, user.office))
+      .catch(() => {
+        // API 실패 시 캐시된 정보 유지 (로그아웃 X)
+      });
+  }, [isHydrated]);
+
   const barWidth = progress.interpolate({
     inputRange: [0, 1],
     outputRange: ['0%', '100%'],
@@ -22,9 +36,9 @@ export default function IntroScreen() {
 
   return (
     <View style={styles.container}>
-      <CommonText
-        labelText="InsightCore"
-        style={[fonts.black, { fontSize: 36, color: colors.primary }]}
+      <Image
+        source={{ uri: BASE_URL + '/images/app_logo.png' }}
+        style={{ width: 220, height: 56, resizeMode: 'contain' }}
       />
       <View style={styles.barTrack}>
         <Animated.View style={[styles.barFill, { width: barWidth }]} />

@@ -134,22 +134,39 @@ function mapCategory(raw: any): BoardCategory {
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function mapVideo(raw: any): EducationVideoItem {
+  const videos = Array.isArray(raw.videos)
+    ? // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      raw.videos.map((v: any) => ({
+        idx: v.idx,
+        youtubeId: v.youtube_id,
+        sortOrder: v.sort_order ?? 0,
+      }))
+    : [];
   return {
     ...mapPost(raw),
-    youtubeId: raw.youtube_id,
-    thumbnailUrl: raw.thumbnail_url,
+    videos,
     description: raw.description ?? '',
     isCompleted: raw.is_completed ?? false,
   };
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
+function extractFirstImageSrc(html: string): string {
+  const match = html.match(/<img[^>]+src=["']([^"']+)["']/i);
+  return match ? match[1] : '';
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 function mapSeminar(raw: any): SeminarPostItem {
   const capacity = raw.capacity ?? 0;
   const registeredCount = raw.registered_count ?? 0;
+  const thumbnailUrl =
+    raw.thumbnail_url ||
+    (raw.content ? extractFirstImageSrc(raw.content) : '') ||
+    '';
   return {
     ...mapPost(raw),
-    thumbnailUrl: raw.thumbnail_url ?? '',
+    thumbnailUrl,
     startAt: raw.start_at,
     endAt: raw.end_at,
     deadline: raw.deadline,
@@ -342,6 +359,14 @@ export const getEducationVideo = async (
   return mapVideo(raw);
 };
 
+/** 교육영상 완료 처리 */
+export const completeEducationVideo = async (idx: number): Promise<void> => {
+  await boardPost<unknown>(
+    `${BASE_URL2}/api/app/board/education/video/${idx}/complete`,
+    {},
+  );
+};
+
 // ─── 교육 자료 ────────────────────────────────────────────────────────
 
 export interface GetEducationDocsParams {
@@ -397,22 +422,31 @@ export const getEducationDoc = async (idx: number): Promise<BoardPost> => {
 export interface GetSeminarPostsParams {
   categoryIdx?: number | null;
   keyword?: string;
+  page?: number;
+  limit?: number;
+}
+
+export interface GetSeminarPostsResult {
+  seminars: SeminarPostItem[];
+  total: number;
 }
 
 /** 세미나 목록 조회 */
 export const getSeminarPosts = async (
   params: GetSeminarPostsParams,
-): Promise<SeminarPostItem[]> => {
+): Promise<GetSeminarPostsResult> => {
   const query = new URLSearchParams();
   if (params.categoryIdx) query.set('category_idx', String(params.categoryIdx));
   if (params.keyword) query.set('keyword', params.keyword);
+  if (params.page) query.set('page', String(params.page));
+  if (params.limit) query.set('limit', String(params.limit));
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const data = await boardFetch<any>(
     `${BASE_URL2}/api/app/board/seminars?${query}`,
   );
   const list = Array.isArray(data) ? data : data?.seminars ?? [];
-  return list.map(mapSeminar);
+  return { seminars: list.map(mapSeminar), total: data?.total ?? list.length };
 };
 
 /** 세미나 상세 조회 */
@@ -424,9 +458,20 @@ export const getSeminarPost = async (idx: number): Promise<SeminarPost> => {
   const raw = data?.seminar ?? data;
   return {
     ...mapSeminar(raw),
-    description: raw.description ?? '',
+    description: raw.content ?? raw.description ?? '',
     files: Array.isArray(raw.files) ? raw.files.map(mapFile) : [],
+    isRegistered: raw.is_registered ?? false,
   };
+};
+
+/** 세미나 신청 */
+export const registerSeminar = async (idx: number): Promise<void> => {
+  await boardPost<unknown>(`${BASE_URL2}/api/app/board/seminar/${idx}/register`, {});
+};
+
+/** 세미나 신청 취소 */
+export const cancelSeminar = async (idx: number): Promise<void> => {
+  await boardDelete<unknown>(`${BASE_URL2}/api/app/board/seminar/${idx}/register`);
 };
 
 // ─── 댓글 ─────────────────────────────────────────────────────────────

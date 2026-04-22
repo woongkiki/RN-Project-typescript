@@ -23,6 +23,8 @@ import { getBoardPosts } from '../../api/board';
 import { getDbStats } from '../../api/customer';
 import { getNotifications } from '../../api/notification';
 import { getPlanMenus, MenuCode } from '../../api/plan';
+import { getMenuOrder } from '../../api/menu';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 type NavigationProp = NativeStackNavigationProp<
   MainStackParamList,
@@ -38,23 +40,58 @@ export default function HomeScreen() {
   const user = useAuthStore(state => state.user);
   const office = useAuthStore(state => state.office);
 
-  const [planMenus, setPlanMenus] = useState<MenuCode[]>([]);
+  const [orderedMenus, setOrderedMenus] = useState<MenuCode[]>([]);
 
-  useEffect(() => {
-    if (!office) {
-      return;
-    }
-    // planIdx 없는 기존 세션은 planCode로 fallback
+  // 메뉴 순서 로드: AsyncStorage 캐시로 즉시 렌더링 후 API로 갱신
+  const loadMenuOrder = useCallback(async () => {
+    if (!office) return;
     const planIdx =
       office.planIdx ??
       (office.planCode === 'C' ? 3 : office.planCode === 'B' ? 2 : 1);
-    getPlanMenus(planIdx).then(setPlanMenus);
+    const allowedCodes = await getPlanMenus(planIdx);
+
+    // 캐시로 우선 렌더링
+    const cached = await AsyncStorage.getItem('menu-order');
+    const cachedOrder: MenuCode[] = cached ? JSON.parse(cached) : [];
+    if (cachedOrder.length > 0) {
+      const merged = [
+        ...cachedOrder.filter(c => allowedCodes.includes(c)),
+        ...allowedCodes.filter(c => !cachedOrder.includes(c)),
+      ];
+      setOrderedMenus(merged);
+    }
+
+    // API로 최신 순서 갱신
+    const apiOrder = await getMenuOrder();
+    if (apiOrder.length > 0) {
+      const merged = [
+        ...apiOrder.filter(c => allowedCodes.includes(c)),
+        ...allowedCodes.filter(c => !apiOrder.includes(c)),
+      ];
+      setOrderedMenus(merged);
+    } else if (cachedOrder.length === 0) {
+      setOrderedMenus(allowedCodes);
+    }
+  }, [office]);
+
+  useEffect(() => {
+    loadMenuOrder();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [office?.planIdx, office?.planCode]);
 
-  const hasMenu = (code: MenuCode) => planMenus.includes(code);
+  const hasSchedule = orderedMenus.includes('schedule');
+  const buttonWidth = hasSchedule ? (width - 40) / 4 : (width - 41) / 3;
 
-  const buttonWidth = hasMenu('schedule') ? (width - 40) / 4 : (width - 41) / 3;
+  type MenuNavDef = { label: string; icon: string; onPress: () => void };
+  const MENU_NAV: Record<MenuCode, MenuNavDef> = {
+    db:        { label: 'DB리스트',  icon: 'dblist_icon.png',      onPress: () => navigation.navigate('TabNavigator', { screen: 'Tab1' }) },
+    schedule:  { label: '스케줄',    icon: 'schedule_icon_b.png',  onPress: () => navigation.navigate('TabNavigator', { screen: 'Schedule' }) },
+    education: { label: '교육',      icon: 'edu_icon.png',         onPress: () => navigation.navigate('EducationScreen', { tab: 'tab1' }) },
+    community: { label: '커뮤니티', icon: 'community_icon.png',   onPress: () => navigation.navigate('TabNavigator', { screen: 'Tab2' }) },
+    payment:   { label: '정산',      icon: 'adjust_icon.png',      onPress: () => navigation.navigate('Adjustment') },
+    stats:     { label: '통계/분석', icon: 'stat_icon.png',        onPress: () => navigation.navigate('StatScreen') },
+    seminar:   { label: '세미나',   icon: 'seminar_icon.png',     onPress: () => navigation.navigate('SeminarScreen') },
+  };
 
   const menuSettingMove = () => {
     navigation.navigate('MenuSetting');
@@ -72,7 +109,8 @@ export default function HomeScreen() {
       getNotifications()
         .then(list => setHasUnread(list.some(n => !n.isRead)))
         .catch(() => {});
-    }, []),
+      loadMenuOrder();
+    }, [loadMenuOrder]),
   );
 
   const today = new Date();
@@ -292,82 +330,20 @@ export default function HomeScreen() {
           paddingHorizontal: 20,
         }}
       >
-        <View style={[styles.menuButtonWrap, { width: buttonWidth }]}>
-          <MenuButton
-            onPress={() =>
-              navigation.navigate('TabNavigator', { screen: 'Tab1' })
-            }
-            label="DB리스트"
-            iconUri={BASE_URL + '/images/dblist_icon.png'}
-            iconWidth={30}
-            iconHeight={28}
-          />
-        </View>
-        <View style={[styles.menuButtonWrap, { width: buttonWidth }]}>
-          <MenuButton
-            onPress={() =>
-              navigation.navigate('EducationScreen', { tab: 'tab1' })
-            }
-            label={'교육'}
-            iconUri={BASE_URL + '/images/edu_icon.png'}
-            iconWidth={32}
-            iconHeight={28}
-          />
-        </View>
-        <View style={[styles.menuButtonWrap, { width: buttonWidth }]}>
-          <MenuButton
-            onPress={() =>
-              navigation.navigate('TabNavigator', { screen: 'Tab2' })
-            }
-            label="커뮤니티"
-            iconUri={BASE_URL + '/images/community_icon.png'}
-            iconWidth={30}
-            iconHeight={30}
-          />
-        </View>
-        <View style={[styles.menuButtonWrap, { width: buttonWidth }]}>
-          <MenuButton
-            onPress={() => navigation.navigate('Adjustment')}
-            label="정산"
-            iconUri={BASE_URL + '/images/adjust_icon.png'}
-            iconWidth={26}
-            iconHeight={30}
-          />
-        </View>
-        <View style={[styles.menuButtonWrap, { width: buttonWidth }]}>
-          <MenuButton
-            onPress={() => navigation.navigate('SeminarScreen')}
-            label="세미나"
-            iconUri={BASE_URL + '/images/seminar_icon.png'}
-            iconWidth={30}
-            iconHeight={30}
-          />
-        </View>
-        {(office?.planCode == 'C' || office?.planCode == 'D') && (
-          <View style={[styles.menuButtonWrap, { width: buttonWidth }]}>
-            <MenuButton
-              onPress={() =>
-                navigation.navigate('TabNavigator', { screen: 'Schedule' })
-              }
-              label="스케줄"
-              iconUri={BASE_URL + '/images/schedule_icon_b.png'}
-              iconWidth={30}
-              iconHeight={30}
-            />
-          </View>
-        )}
-        {(office?.planCode == 'C' || office?.planCode == 'D') && (
-          <View style={[styles.menuButtonWrap, { width: buttonWidth }]}>
-            <MenuButton
-              onPress={() => navigation.navigate('StatScreen')}
-              label="통계/분석"
-              iconUri={BASE_URL + '/images/stat_icon.png'}
-              iconWidth={30}
-              iconHeight={30}
-            />
-          </View>
-        )}
-
+        {orderedMenus.map(code => {
+          const def = MENU_NAV[code];
+          return (
+            <View key={code} style={[styles.menuButtonWrap, { width: buttonWidth }]}>
+              <MenuButton
+                onPress={def.onPress}
+                label={def.label}
+                iconUri={BASE_URL + '/images/' + def.icon}
+                iconWidth={30}
+                iconHeight={30}
+              />
+            </View>
+          );
+        })}
         <View style={[styles.menuButtonWrap, { width: buttonWidth }]}>
           <MenuButton
             onPress={menuSettingMove}

@@ -10,7 +10,7 @@ import { fonts } from '../../constants/fonts';
 import YoutubePlayer from 'react-native-youtube-iframe';
 import { useCallback, useEffect, useState } from 'react';
 import { useFocusEffect } from '@react-navigation/native';
-import { getEducationVideo } from '../../api/board';
+import { completeEducationVideo, getEducationVideo } from '../../api/board';
 import { EducationVideoItem } from '../../types';
 
 type Props = NativeStackScreenProps<MainStackParamList, 'VideoDetailScreen'>;
@@ -21,18 +21,44 @@ export default function VideoDetailScreen({ route, navigation }: Props) {
 
   const [video, setVideo] = useState<EducationVideoItem | null>(null);
   const [loading, setLoading] = useState(true);
-  const [playing, setPlaying] = useState(false);
+  const [playingIdx, setPlayingIdx] = useState<number | null>(null);
+  const [isCompleted, setIsCompleted] = useState(false);
+  const [actionLoading, setActionLoading] = useState(false);
 
   useEffect(() => {
     getEducationVideo(Number(idx))
-      .then(setVideo)
+      .then(data => {
+        setVideo(data);
+        setIsCompleted(data.isCompleted);
+      })
       .catch(() => Alert.alert('오류', '영상을 불러올 수 없습니다.'))
       .finally(() => setLoading(false));
   }, [idx]);
 
+  const handleComplete = () => {
+    Alert.alert('교육 완료', '이 영상을 교육완료로 처리하시겠습니까?', [
+      { text: '취소', style: 'cancel' },
+      {
+        text: '완료',
+        onPress: async () => {
+          setActionLoading(true);
+          try {
+            await completeEducationVideo(Number(idx));
+            setIsCompleted(true);
+            Alert.alert('완료', '교육이 완료 처리되었습니다.');
+          } catch (e: any) {
+            Alert.alert('오류', e?.message ?? '처리에 실패했습니다.');
+          } finally {
+            setActionLoading(false);
+          }
+        },
+      },
+    ]);
+  };
+
   useFocusEffect(
     useCallback(() => {
-      return () => setPlaying(false);
+      return () => setPlayingIdx(null);
     }, []),
   );
 
@@ -51,16 +77,29 @@ export default function VideoDetailScreen({ route, navigation }: Props) {
     <Layout>
       <SubHeader headerLabel="" headerLeftOnPress={() => navigation.goBack()} />
       <ScrollView>
-        <YoutubePlayer
-          height={220}
-          width={width}
-          play={playing}
-          videoId={video?.youtubeId ?? ''}
-          onChangeState={(state: any) => {
-            if (state === 'ended') setPlaying(false);
-          }}
-          onError={(e: any) => console.log('youtube error:', e)}
-        />
+        {/* 영상 목록 */}
+        {video?.videos.map((v, i) => (
+          <View key={v.idx} style={{ marginBottom: i < (video.videos.length - 1) ? 12 : 0 }}>
+            {video.videos.length > 1 && (
+              <CommonText
+                labelText={`영상 ${i + 1}`}
+                labelTextStyle={[fonts.semiBold, { fontSize: 13, color: colors.gray7, paddingHorizontal: 16, paddingTop: 12, paddingBottom: 4 }]}
+              />
+            )}
+            <YoutubePlayer
+              height={220}
+              width={width}
+              play={playingIdx === i}
+              videoId={v.youtubeId}
+              onChangeState={(state: any) => {
+                if (state === 'ended') setPlayingIdx(null);
+                if (state === 'playing') setPlayingIdx(i);
+              }}
+              onError={(e: any) => console.log('youtube error:', e)}
+            />
+          </View>
+        ))}
+
         <View style={{ padding: 20 }}>
           <View style={{ alignItems: 'flex-start' }}>
             <View
@@ -68,14 +107,14 @@ export default function VideoDetailScreen({ route, navigation }: Props) {
                 paddingHorizontal: 8,
                 paddingVertical: 5,
                 borderRadius: 4,
-                backgroundColor: video?.isCompleted ? colors.primary3 : colors.gray0,
+                backgroundColor: isCompleted ? colors.primary3 : colors.gray0,
               }}
             >
               <CommonText
-                labelText={video?.isCompleted ? '교육완료' : '미완료'}
+                labelText={isCompleted ? '교육완료' : '미완료'}
                 labelTextStyle={[
                   fonts.semiBold,
-                  { fontSize: 14, color: video?.isCompleted ? colors.primary : colors.gray6 },
+                  { fontSize: 14, color: isCompleted ? colors.primary : colors.gray6 },
                 ]}
               />
             </View>
@@ -92,10 +131,18 @@ export default function VideoDetailScreen({ route, navigation }: Props) {
       </ScrollView>
       <View style={{ paddingHorizontal: 20, paddingVertical: 10, borderTopWidth: 1, borderTopColor: colors.gray1 }}>
         <TouchableOpacity
-          style={{ height: 52, borderRadius: 30, backgroundColor: colors.primary, alignItems: 'center', justifyContent: 'center' }}
+          disabled={isCompleted || actionLoading}
+          onPress={handleComplete}
+          style={{
+            height: 52,
+            borderRadius: 30,
+            backgroundColor: isCompleted ? colors.gray3 : colors.primary,
+            alignItems: 'center',
+            justifyContent: 'center',
+          }}
         >
           <CommonText
-            labelText="교육완료"
+            labelText={actionLoading ? '처리중...' : isCompleted ? '교육완료' : '완료하기'}
             labelTextStyle={[fonts.semiBold, { fontSize: 16, color: '#fff' }]}
           />
         </TouchableOpacity>

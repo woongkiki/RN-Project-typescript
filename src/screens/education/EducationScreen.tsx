@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { MainStackParamList } from '../../navigation/types';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
+import { useFocusEffect } from '@react-navigation/native';
 import Layout from '../../components/Layout';
 import { ActivityIndicator, FlatList, Image, StyleSheet, TouchableOpacity, View } from 'react-native';
 import { useAppDimensions } from '../../hooks/useAppDimensions';
@@ -60,6 +61,7 @@ export default function EducationScreen({ route, navigation }: Props) {
 
   const videoFetchingRef = useRef(false);
   const docFetchingRef = useRef(false);
+  const initialFocusDone = useRef(false);
 
   // 카테고리 로드
   useEffect(() => {
@@ -123,6 +125,18 @@ export default function EducationScreen({ route, navigation }: Props) {
     fetchDocs(1, true);
   }, [fetchDocs]);
 
+  // 상세에서 돌아올 때 목록 갱신 (초기 진입은 위 useEffect가 처리)
+  useFocusEffect(
+    useCallback(() => {
+      if (!initialFocusDone.current) {
+        initialFocusDone.current = true;
+        return;
+      }
+      fetchVideos(1, true);
+      fetchDocs(1, true);
+    }, [fetchVideos, fetchDocs]),
+  );
+
   const handleLoadMore = () => {
     if (tab === 'tab1') {
       const hasMore = videoData.length < videoTotal;
@@ -158,11 +172,12 @@ export default function EducationScreen({ route, navigation }: Props) {
     }
   };
 
-  const ytThumb = (item: EducationVideoItem) =>
-    item.thumbnailUrl ||
-    (item.youtubeId
-      ? `https://img.youtube.com/vi/${item.youtubeId}/hqdefault.jpg`
-      : '');
+  const ytThumb = (item: EducationVideoItem) => {
+    const firstVideo = item.videos[0];
+    return firstVideo
+      ? `https://img.youtube.com/vi/${firstVideo.youtubeId}/hqdefault.jpg`
+      : '';
+  };
 
   const videoRenderItem = ({ item, index }: { item: EducationVideoItem; index: number }) => (
     <VideoListItem

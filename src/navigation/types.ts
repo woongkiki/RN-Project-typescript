@@ -8,6 +8,7 @@ export type RootStackParamList = {
     token: string;
     office: Office;
   };
+  RegisterScreen: undefined;
 };
 
 export type MainStackParamList = {

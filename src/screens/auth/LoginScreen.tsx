@@ -1,20 +1,7 @@
 import React, { useEffect, useState } from 'react';
-import {
-  View,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  StyleSheet,
-  ActivityIndicator,
-  Alert,
-  KeyboardAvoidingView,
-  Platform,
-  TouchableWithoutFeedback,
-  Keyboard,
-  Image,
-} from 'react-native';
+import { View, TouchableOpacity, Alert, Image } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { loginApi } from '../../api/auth';
+import { loginApi, getJoinStatusApi } from '../../api/auth';
 import { useAuthStore } from '../../store';
 import Layout from '../../components/Layout';
 import CommonInput from '../../components/CommonInput';
@@ -36,15 +23,21 @@ export default function LoginScreen({ navigation }: Props) {
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [idSave, setIdSave] = useState(false);
+  const [joinEnabled, setJoinEnabled] = useState(false);
 
-  // 저장된 아이디 불러오기
   useEffect(() => {
+    // 저장된 아이디 불러오기
     AsyncStorage.getItem(SAVED_ID_KEY).then(saved => {
       if (saved) {
         setId(saved);
         setIdSave(true);
       }
     });
+
+    // 회원가입 사용 여부 확인
+    getJoinStatusApi()
+      .then(enabled => setJoinEnabled(enabled))
+      .catch(() => setJoinEnabled(false));
   }, []);
 
   const handleLogin = async () => {
@@ -88,9 +81,9 @@ export default function LoginScreen({ navigation }: Props) {
       }}
     >
       <View>
-        <CommonText
-          labelText="InsightCore"
-          style={[fonts.black, { fontSize: 30, color: colors.primary }]}
+        <Image
+          source={{ uri: BASE_URL + '/images/app_logo.png' }}
+          style={{ width: 220, height: 56, resizeMode: 'contain' }}
         />
       </View>
       <View style={{ width: '100%', gap: 15, marginTop: 60, marginBottom: 40 }}>
@@ -136,19 +129,17 @@ export default function LoginScreen({ navigation }: Props) {
         disabled={loading}
         loading={loading}
       />
+      {joinEnabled && (
+        <TouchableOpacity
+          onPress={() => navigation.navigate('RegisterScreen')}
+          style={{ marginTop: 16, alignItems: 'center' }}
+        >
+          <CommonText
+            labelText="회원가입"
+            labelTextStyle={{ fontSize: 14, color: colors.gray6 }}
+          />
+        </TouchableOpacity>
+      )}
     </Layout>
   );
 }
-
-const styles = StyleSheet.create({
-  button: {
-    backgroundColor: '#007AFF',
-    padding: 16,
-    borderRadius: 8,
-    alignItems: 'center',
-    marginTop: 8,
-  },
-  buttonText: { color: '#FFFFFF', fontSize: 16, fontWeight: 'bold' },
-  bar: { width: 1, height: 12, backgroundColor: colors.gray4 },
-  registerButtonText: { fontSize: 16, color: colors.gray6 },
-});

@@ -18,6 +18,7 @@ import { useAppDimensions } from '../../hooks/useAppDimensions';
 import { BASE_URL } from '../../api/util';
 import { useAuthStore } from '../../store';
 import { getPlanMenus, MenuCode } from '../../api/plan';
+import { getMenuOrder, saveMenuOrder } from '../../api/menu';
 
 type Props = NativeStackScreenProps<MainStackParamList, 'MenuSetting'>;
 
@@ -27,7 +28,7 @@ type MenuItem = {
   icon: string;
 };
 
-const MENU_STORAGE_KEY = 'menu-order';
+const MENU_CACHE_KEY = 'menu-order';
 
 const MENU_DEFS: Record<MenuCode, Omit<MenuItem, 'key'>> = {
   db:        { label: 'DB리스트',  icon: 'dblist_icon.png' },
@@ -50,9 +51,12 @@ export default function MenuSettingScreen({ navigation }: Props) {
     const planIdx = office.planIdx ?? (office.planCode === 'C' ? 3 : office.planCode === 'B' ? 2 : 1);
 
     getPlanMenus(planIdx).then(async allowedCodes => {
-      // 저장된 순서 불러오기
-      const saved = await AsyncStorage.getItem(MENU_STORAGE_KEY);
-      const savedOrder: MenuCode[] = saved ? JSON.parse(saved) : [];
+      // API에서 저장된 순서 조회, 실패 시 AsyncStorage 캐시로 fallback
+      let savedOrder: MenuCode[] = await getMenuOrder();
+      if (savedOrder.length === 0) {
+        const cached = await AsyncStorage.getItem(MENU_CACHE_KEY);
+        savedOrder = cached ? JSON.parse(cached) : [];
+      }
 
       // 저장된 순서 중 현재 플랜에서 허용된 코드만 유지
       const ordered = savedOrder.filter(code => allowedCodes.includes(code));
@@ -65,10 +69,12 @@ export default function MenuSettingScreen({ navigation }: Props) {
   }, [office?.planIdx]);
 
   const handleSave = async () => {
-    await AsyncStorage.setItem(
-      MENU_STORAGE_KEY,
-      JSON.stringify(menus.map(m => m.key)),
-    );
+    const order = menus.map(m => m.key);
+    // API 저장 + AsyncStorage 캐시 동시 갱신
+    await Promise.all([
+      saveMenuOrder(order),
+      AsyncStorage.setItem(MENU_CACHE_KEY, JSON.stringify(order)),
+    ]);
     navigation.goBack();
   };
 

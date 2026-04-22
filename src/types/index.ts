@@ -242,11 +242,17 @@ export interface BoardPost extends BoardPostItem {
   files: BoardFile[];
 }
 
-// 동영상 교육 게시글 (boardType: 'education', 동영상 탭)
-// content 필드에 저장된 JSON { youtube_id, description } 을 API가 파싱하여 반환
-export interface EducationVideoItem extends BoardPostItem {
+// tbl_board_education_videos — 게시물에 연결된 유튜브 영상
+export interface EducationVideo {
+  idx: number;
   youtubeId: string;
-  thumbnailUrl: string;
+  sortOrder: number;
+}
+
+// 동영상 교육 게시글 (boardType: 'education', 동영상 탭)
+// tbl_board_education_videos 테이블 기반으로 변경
+export interface EducationVideoItem extends BoardPostItem {
+  videos: EducationVideo[];
   description: string;
   isCompleted: boolean; // 교육 완료 여부 (추후 별도 이력 테이블 연동)
 }
@@ -267,6 +273,7 @@ export interface SeminarPostItem extends BoardPostItem {
 export interface SeminarPost extends SeminarPostItem {
   description: string; // 세미나 소개글
   files: BoardFile[];
+  isRegistered: boolean; // 현재 로그인 유저의 신청 여부
 }
 
 // ─── 직원평가 (tbl_evaluation_categories / tbl_evaluation_items / tbl_evaluations / tbl_evaluation_scores) ───

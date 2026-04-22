@@ -86,6 +86,127 @@ const mockLogin = (id: string, password: string): LoginResponse => {
 };
 // ────────────────────────────────────────────────────────────────────
 
+export interface OfficeItem {
+  idx: number;
+  name: string;
+  phone?: string;
+}
+
+interface OfficesApiResponse {
+  success: boolean;
+  message: string | null;
+  data: { offices: OfficeItem[] } | null;
+}
+
+export interface RegisterParams {
+  name: string;
+  login_id: string;
+  password: string;
+  office_idx: number;
+  role: string;
+  phone?: string;
+  email?: string;
+  agreed_term_idxs?: number[];
+}
+
+export const registerApi = async (params: RegisterParams): Promise<void> => {
+  const url = `${BASE_URL2}/api/app/auth/register`;
+  console.log('[registerApi] request URL:', url, JSON.stringify(params));
+
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(params),
+  });
+
+  console.log('[registerApi] HTTP status:', response.status);
+
+  const json: ApiResponse<unknown> = await response.json();
+  console.log('[registerApi] response body:', JSON.stringify(json));
+
+  if (!json.success) {
+    throw new Error(json.message ?? '회원가입에 실패했습니다.');
+  }
+};
+
+export const getJoinStatusApi = async (): Promise<boolean> => {
+  const url = `${BASE_URL2}/api/app/join-status`;
+  console.log('[getJoinStatusApi] request URL:', url);
+
+  const response = await fetch(url, {
+    method: 'GET',
+    headers: { 'Content-Type': 'application/json' },
+  });
+
+  console.log('[getJoinStatusApi] HTTP status:', response.status);
+
+  const json: ApiResponse<{ join_enabled: boolean }> = await response.json();
+  console.log('[getJoinStatusApi] response body:', JSON.stringify(json));
+
+  if (!json.success || !json.data) {
+    throw new Error(json.message ?? '회원가입 상태를 확인하지 못했습니다.');
+  }
+
+  return json.data.join_enabled;
+};
+
+export interface TermsItem {
+  idx: number;
+  type: string;
+  title: string;
+  version: string;
+  content: string;
+  created_at: string;
+}
+
+interface TermsApiResponse {
+  success: boolean;
+  message: string | null;
+  data: { terms: TermsItem[] } | null;
+}
+
+export const getTermsApi = async (): Promise<TermsItem[]> => {
+  const url = `${BASE_URL2}/api/app/terms`;
+  console.log('[getTermsApi] request URL:', url);
+
+  const response = await fetch(url, {
+    method: 'GET',
+    headers: { 'Content-Type': 'application/json' },
+  });
+
+  console.log('[getTermsApi] HTTP status:', response.status);
+
+  const json: TermsApiResponse = await response.json();
+  console.log('[getTermsApi] response body:', JSON.stringify(json));
+
+  if (!json.success || !json.data) {
+    throw new Error(json.message ?? '약관 정보를 불러오지 못했습니다.');
+  }
+
+  return json.data.terms;
+};
+
+export const getOfficesApi = async (): Promise<OfficeItem[]> => {
+  const url = `${BASE_URL2}/api/app/offices`;
+  console.log('[getOfficesApi] request URL:', url);
+
+  const response = await fetch(url, {
+    method: 'GET',
+    headers: { 'Content-Type': 'application/json' },
+  });
+
+  console.log('[getOfficesApi] HTTP status:', response.status);
+
+  const json: OfficesApiResponse = await response.json();
+  console.log('[getOfficesApi] response body:', JSON.stringify(json));
+
+  if (!json.success || !json.data) {
+    throw new Error(json.message ?? '영업점 정보를 불러오지 못했습니다.');
+  }
+
+  return json.data.offices;
+};
+
 export interface UpdateMyInfoParams {
   password?: string;
   phone?: string;
@@ -114,6 +235,29 @@ export const updateMyInfoApi = async (
   if (!json.success) {
     throw new Error(json.message ?? '내 정보 수정에 실패했습니다.');
   }
+};
+
+export interface MeResponse {
+  user: User; // office는 user.office 안에 중첩
+}
+
+export const getMeApi = async (token: string): Promise<MeResponse> => {
+  const response = await fetch(`${BASE_URL2}/api/app/auth/me`, {
+    method: 'GET',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${token}`,
+      'X-App-Token': token,
+    },
+  });
+
+  const json: ApiResponse<MeResponse> = await response.json();
+
+  if (!json.success || !json.data) {
+    throw new Error(json.message ?? '계정 정보를 불러오지 못했습니다.');
+  }
+
+  return json.data;
 };
 
 export const loginApi = async (
