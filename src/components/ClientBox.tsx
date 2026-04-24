@@ -57,24 +57,16 @@ export default function ClientBox({
                 style={{
                   paddingVertical: 5,
                   paddingHorizontal: 6,
-                  backgroundColor:
-                    item.consultStatus !== '상담대기'
-                      ? colors.primary
-                      : colors.gray1,
+                  backgroundColor: item.isOpen ? colors.primary : colors.gray1,
                   borderRadius: 4,
                 }}
               >
                 <CommonText
-                  labelText={
-                    item.consultStatus !== '상담대기' ? '열람' : '미열람'
-                  }
+                  labelText={item.isOpen ? '열람' : '미열람'}
                   style={[
                     fonts.semiBold,
                     {
-                      color:
-                        item.consultStatus !== '상담대기'
-                          ? colors.white
-                          : colors.gray6,
+                      color: item.isOpen ? colors.white : colors.gray6,
                       fontSize: 11,
                     },
                   ]}
@@ -87,14 +79,18 @@ export default function ClientBox({
               labelText={item.name}
               style={[fonts.semiBold, styles.dbText, { color: colors.gray10 }]}
             />
-            <View>
-              <CommonText
-                labelText={item.age + ' · ' + item.gender}
-                style={[fonts.regular, { fontSize: 15, color: colors.gray7 }]}
-              />
-            </View>
+            {(item.age != null || item.gender != null) && (
+              <View>
+                <CommonText
+                  labelText={[item.age, item.gender]
+                    .filter(v => v != null)
+                    .join(' · ')}
+                  style={[fonts.regular, { fontSize: 15, color: colors.gray7 }]}
+                />
+              </View>
+            )}
           </View>
-          <View style={{ marginTop: 12, gap: 8 }}>
+          <View style={{ gap: 8 }}>
             {nextConsultDate && (
               <View style={[styles.row, { gap: 7 }]}>
                 <Image
@@ -120,7 +116,7 @@ export default function ClientBox({
               </View>
             )} */}
             {item.address && (
-              <View style={[styles.row, { gap: 5 }]}>
+              <View style={[styles.row, { gap: 5, marginTop: 12 }]}>
                 <Image
                   source={{ uri: BASE_URL + '/images/address_icon_gray.png' }}
                   style={{ width: 10, height: 10, resizeMode: 'contain' }}

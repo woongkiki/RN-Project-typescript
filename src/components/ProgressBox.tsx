@@ -23,7 +23,7 @@ function ProgressBox({
 }: ProgressProps) {
   const { width } = useAppDimensions();
 
-  let percent = Math.floor((value / total) * 100);
+  let percent = total > 0 ? Math.floor((value / total) * 100) : 0;
 
   return (
     <View

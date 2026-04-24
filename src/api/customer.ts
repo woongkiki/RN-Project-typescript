@@ -87,6 +87,7 @@ async function customerPost<T>(url: string, body: object): Promise<T> {
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function mapCustomer(raw: any): Customer {
+  console.log('[mapCustomer] raw keys:', Object.keys(raw), '| created_at:', raw.created_at, '| createdAt:', raw.createdAt, '| distribute_at:', raw.distribute_at);
   return {
     idx: raw.idx,
     customerType: raw.customer_type ?? raw.customerType,
@@ -107,6 +108,20 @@ function mapCustomer(raw: any): Customer {
     dbGradeIdx: raw.db_grade_idx ?? null,
     dbGradeName: raw.db_grade_name ?? raw.dbGradeName ?? null,
     consultStatus: raw.consult_status ?? raw.consultStatus,
+    isOpen: raw.is_open === 1 || raw.isOpen === true,
+    recordingUrl: raw.recordingUrl ?? null,
+    recordingName: raw.recordingName ?? null,
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    tts: Array.isArray(raw.tts) ? raw.tts.map((r: any) => ({
+      id: r.id,
+      audioFile: r.audioFile,
+      sequenceNo: r.sequenceNo,
+      transcript: r.transcript,
+      startTime: r.startTime,
+      endTime: r.endTime,
+      confidence: r.confidence ?? null,
+      createdAt: r.createdAt ?? '',
+    })) : [],
     assignedAccountIdx:
       raw.assigned_account_idx ?? raw.assignedAccountIdx ?? null,
     assignedAccountName:
@@ -212,10 +227,12 @@ export async function getConsultStatuses(): Promise<ConsultStatus[]> {
 }
 
 /** 오늘 진행 현황 */
-export async function getProgressCounts(): Promise<ProgressCounts> {
+export async function getProgressCounts(assignedAccountIdx?: number): Promise<ProgressCounts> {
+  const query = new URLSearchParams();
+  if (assignedAccountIdx) query.set('assignedAccountIdx', String(assignedAccountIdx));
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const data = await customerFetch<any>(
-    `${BASE_URL2}/api/app/customers/progress`,
+    `${BASE_URL2}/api/app/customers/progress?${query}`,
   );
 
   return mapProgressCounts(data);
@@ -310,6 +327,17 @@ export async function updateConsultStatus(
   await customerPatch<unknown>(
     `${BASE_URL2}/api/app/customers/${customerType}/${idx}/status`,
     { consultStatus },
+  );
+}
+
+/** 고객 열람 처리 (is_open = 1) */
+export async function openCustomer(
+  customerType: CustomerType,
+  idx: number,
+): Promise<void> {
+  await customerPatch<unknown>(
+    `${BASE_URL2}/api/app/customers/${customerType}/${idx}/open`,
+    {},
   );
 }
 

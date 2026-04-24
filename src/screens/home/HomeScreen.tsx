@@ -101,6 +101,20 @@ export default function HomeScreen() {
   const [dbStats, setDbStats] = useState<DbStats | null>(null);
   const [hasUnread, setHasUnread] = useState(false);
 
+  const today = new Date();
+  const [currentYear, setCurrentYear] = useState(today.getFullYear());
+  const [currentMonth, setCurrentMonth] = useState(today.getMonth() + 1); // 1~12
+
+  const loadDbStats = useCallback(() => {
+    console.log('[HomeScreen] getDbStats 호출:', { currentYear, currentMonth, userIdx: user?.idx });
+    getDbStats(currentYear, currentMonth, user?.idx ?? undefined)
+      .then(data => {
+        console.log('[HomeScreen] getDbStats 응답:', JSON.stringify(data));
+        setDbStats(data);
+      })
+      .catch(e => console.log('[HomeScreen] getDbStats 에러:', e));
+  }, [currentYear, currentMonth, user?.idx]);
+
   useFocusEffect(
     useCallback(() => {
       getBoardPosts({ boardType: 'general', limit: 2 })
@@ -110,18 +124,9 @@ export default function HomeScreen() {
         .then(list => setHasUnread(list.some(n => !n.isRead)))
         .catch(() => {});
       loadMenuOrder();
-    }, [loadMenuOrder]),
+      loadDbStats();
+    }, [loadMenuOrder, loadDbStats]),
   );
-
-  const today = new Date();
-  const [currentYear, setCurrentYear] = useState(today.getFullYear());
-  const [currentMonth, setCurrentMonth] = useState(today.getMonth() + 1); // 1~12
-
-  useEffect(() => {
-    getDbStats(currentYear, currentMonth, user?.idx ?? undefined)
-      .then(setDbStats)
-      .catch(() => {});
-  }, [currentYear, currentMonth, user?.idx]);
 
   const isNextDisabled =
     currentYear === today.getFullYear() &&

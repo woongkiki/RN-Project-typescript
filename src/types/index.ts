@@ -90,6 +90,10 @@ export interface Customer {
   dbGradeIdx?: number | null;
   dbGradeName?: string | null;       // office 고객만
   consultStatus: string;
+  isOpen: boolean;
+  recordingUrl: string | null;
+  recordingName: string | null;
+  tts: AudioTtsItem[];
   assignedAccountIdx: number | null;
   assignedAccountName?: string | null;
   distributeAt?: string | null;      // office 고객만

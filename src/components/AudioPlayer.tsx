@@ -1,36 +1,38 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
-  View,
-  TouchableOpacity,
-  StyleSheet,
-  PanResponder,
+  Image,
   LayoutChangeEvent,
+  Modal,
+  PanResponder,
+  ScrollView,
+  StyleSheet,
+  TouchableOpacity,
+  View,
 } from 'react-native';
 import TrackPlayer, {
+  AppKilledPlaybackBehavior,
   Capability,
   Event,
+  RepeatMode,
   State,
   usePlaybackState,
   useProgress,
   useTrackPlayerEvents,
-  AppKilledPlaybackBehavior,
-  RepeatMode,
 } from 'react-native-track-player';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import CommonText from './CommonText';
 import { colors } from '../constants/colors';
 import { fonts } from '../constants/fonts';
 import { AudioTtsItem } from '../types';
+import { BASE_URL } from '../api/util';
 
 interface Props {
-  // 실제 서버 URL 또는 로컬 파일 경로
   url: string;
   title?: string;
   ttsItems?: AudioTtsItem[];
-  // 자막 싱크를 위한 콜백 (추후 자막 기능 추가 시 사용)
   onPositionChange?: (position: number) => void;
 }
 
-// 초 → mm:ss 포맷
 const formatTime = (seconds: number): string => {
   const mins = Math.floor(seconds / 60)
     .toString()
@@ -42,15 +44,12 @@ const formatTime = (seconds: number): string => {
 };
 
 let setupPlayerPromise: Promise<void> | null = null;
-
 const setupPlayer = (): Promise<void> => {
   if (setupPlayerPromise) return setupPlayerPromise;
   setupPlayerPromise = (async () => {
     try {
       await TrackPlayer.setupPlayer();
-    } catch {
-      // 이미 초기화된 경우 무시
-    }
+    } catch {}
     await TrackPlayer.updateOptions({
       android: {
         appKilledPlaybackBehavior:
@@ -73,15 +72,10 @@ export default function AudioPlayer({
   ttsItems,
   onPositionChange,
 }: Props) {
+  const insets = useSafeAreaInsets();
   const playbackState = usePlaybackState();
-  // ✅ 200ms마다 position 업데이트 → 자막 싱크에 적합
   const { position, duration } = useProgress(200);
-
   const durationRef = useRef(0);
-
-  useEffect(() => {
-    durationRef.current = duration;
-  }, [duration]);
 
   const isPlaying = playbackState.state === State.Playing;
   const isLoading =
@@ -90,53 +84,61 @@ export default function AudioPlayer({
     playbackState.state === undefined;
 
   const [trackLoaded, setTrackLoaded] = useState(false);
-  const [currentTranscript, setCurrentTranscript] = useState<string | null>(null);
-  const [hasEnded, setHasEnded] = useState(false);
-  const [hasStarted, setHasStarted] = useState(false);
+  const [, setHasEnded] = useState(false);
+  const [modalVisible, setModalVisible] = useState(false);
+  const [activeIdx, setActiveIdx] = useState<number>(-1);
+
+  // 프로그레스바 드래그
   const barWidthRef = useRef(0);
   const isDragging = useRef(false);
   const [isDraggingState, setIsDraggingState] = useState(false);
   const [dragPosition, setDragPosition] = useState(0);
 
-  // 재생 종료 시 강제 정지 + 게이지 리셋 + 자막 박스 숨김 (Android 포함)
+  const scrollViewRef = useRef<ScrollView>(null);
+  const itemHeightsRef = useRef<number[]>([]);
+
+  useEffect(() => {
+    durationRef.current = duration;
+  }, [duration]);
+
   useTrackPlayerEvents([Event.PlaybackQueueEnded], async () => {
     await TrackPlayer.pause();
     await TrackPlayer.seekTo(0);
     setHasEnded(true);
-    setCurrentTranscript(null);
+    setActiveIdx(-1);
   });
 
-  // position 변경 시 자막 콜백 + 현재 자막 계산
+  // position 변경 → 자막 인덱스 갱신
   useEffect(() => {
     if (isDragging.current) return;
-    if (onPositionChange) {
-      onPositionChange(position);
-    }
+    onPositionChange?.(position);
     if (ttsItems && ttsItems.length > 0) {
-      const matched = ttsItems.find(
+      const idx = ttsItems.findIndex(
         item => position >= item.startTime && position < item.endTime,
       );
-      setCurrentTranscript(matched?.transcript ?? null);
+      if (idx !== activeIdx) {
+        setActiveIdx(idx);
+        if (idx >= 0 && scrollViewRef.current) {
+          const offsetY = itemHeightsRef.current
+            .slice(0, idx)
+            .reduce((sum, h) => sum + h, 0);
+          scrollViewRef.current.scrollTo({ y: offsetY, animated: true });
+        }
+      }
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [position]);
 
-  // ✅ 컴포넌트 마운트 시 플레이어 초기화 + 트랙 로드
   useEffect(() => {
     const init = async () => {
       await setupPlayer();
       await TrackPlayer.reset();
-      await TrackPlayer.add({
-        url,
-        title,
-        artist: '상담 녹취',
-      });
+      await TrackPlayer.add({ url, title, artist: '상담 녹취' });
       await TrackPlayer.setRepeatMode(RepeatMode.Off);
       setTrackLoaded(true);
     };
     init();
-
     return () => {
-      // ✅ 화면 벗어나면 정지 및 리셋
       TrackPlayer.reset();
       setTrackLoaded(false);
     };
@@ -148,12 +150,10 @@ export default function AudioPlayer({
       await TrackPlayer.pause();
     } else {
       setHasEnded(false);
-      setHasStarted(true);
       await TrackPlayer.play();
     }
   };
 
-  // ✅ 프로그레스바 드래그로 seek
   const panResponder = useRef(
     PanResponder.create({
       onStartShouldSetPanResponder: () => true,
@@ -161,27 +161,27 @@ export default function AudioPlayer({
       onPanResponderGrant: evt => {
         isDragging.current = true;
         setIsDraggingState(true);
-        const ratio = Math.max(
-          0,
-          Math.min(1, evt.nativeEvent.locationX / barWidthRef.current),
+        setDragPosition(
+          Math.max(
+            0,
+            Math.min(1, evt.nativeEvent.locationX / barWidthRef.current),
+          ),
         );
-        setDragPosition(ratio);
       },
       onPanResponderMove: evt => {
-        const ratio = Math.max(
-          0,
-          Math.min(1, evt.nativeEvent.locationX / barWidthRef.current),
+        setDragPosition(
+          Math.max(
+            0,
+            Math.min(1, evt.nativeEvent.locationX / barWidthRef.current),
+          ),
         );
-        setDragPosition(ratio);
       },
       onPanResponderRelease: async evt => {
         const ratio = Math.max(
           0,
           Math.min(1, evt.nativeEvent.locationX / barWidthRef.current),
         );
-        // const seekTo = ratio * duration;
-        const seekTo = ratio * durationRef.current;
-        await TrackPlayer.seekTo(seekTo);
+        await TrackPlayer.seekTo(ratio * durationRef.current);
         isDragging.current = false;
         setIsDraggingState(false);
       },
@@ -189,107 +189,225 @@ export default function AudioPlayer({
   ).current;
 
   const onBarLayout = (e: LayoutChangeEvent) => {
-    // setBarWidth(e.nativeEvent.layout.width);
     barWidthRef.current = e.nativeEvent.layout.width;
   };
 
-  // 현재 표시할 progress ratio
-  const progressRatio = isDraggingState // ✅
+  const progressRatio = isDraggingState
     ? dragPosition
     : duration > 0
     ? position / duration
     : 0;
 
-  return (
-    <View>
-      <View style={styles.container}>
-        {/* 재생/정지 버튼 */}
-        <TouchableOpacity
-          onPress={togglePlayback}
-          style={styles.playButton}
-          disabled={isLoading}
-        >
-          <CommonText
-            labelText={isLoading ? '...' : isPlaying ? '⏸' : '▶'}
-            labelTextStyle={[
-              fonts.bold,
-              {
-                fontSize: isLoading ? 14 : 20,
-                color: isLoading ? colors.gray5 : colors.primary,
-              },
-            ]}
-          />
-        </TouchableOpacity>
+  const displayPosition = isDraggingState
+    ? dragPosition * durationRef.current
+    : position;
 
-        {/* 프로그레스바 + 시간 */}
-        <View style={styles.rightArea}>
-          {/* ✅ 드래그 가능한 프로그레스바 */}
+  return (
+    <>
+      {/* ── 컴팩트 트리거 ── */}
+      <TouchableOpacity
+        activeOpacity={0.85}
+        onPress={() => setModalVisible(true)}
+        style={styles.trigger}
+      >
+        <View style={styles.triggerLeft}>
+          <View style={styles.triggerIcon}>
+            {/* <CommonText
+              labelText={isPlaying ? '⏸' : '▶'}
+              labelTextStyle={{ fontSize: 14, color: colors.primary }}
+            /> */}
+            <Image
+              source={{ uri: BASE_URL + '/images/music_icons.png' }}
+              style={{ width: 18, height: 18, resizeMode: 'contain' }}
+            />
+          </View>
+          <View style={{ flex: 1 }}>
+            <CommonText
+              labelText={title}
+              labelTextStyle={[
+                fonts.medium,
+                { fontSize: 13, color: colors.gray9 },
+              ]}
+              numberOfLines={1}
+            />
+            <CommonText
+              labelText={
+                isPlaying ? `${formatTime(position)} 재생 중` : '탭하여 재생'
+              }
+              labelTextStyle={{
+                fontSize: 11,
+                color: colors.gray5,
+                marginTop: 2,
+              }}
+            />
+          </View>
+        </View>
+      </TouchableOpacity>
+
+      {/* ── 모달 플레이어 ── */}
+      <Modal
+        visible={modalVisible}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setModalVisible(false)}
+      >
+        <View style={styles.modalRoot}>
+          {/* 딤 배경 */}
+          <TouchableOpacity
+            style={styles.modalOverlay}
+            activeOpacity={1}
+            onPress={() => setModalVisible(false)}
+          />
+
+          {/* 바텀시트 */}
           <View
-            style={styles.progressBarWrap}
-            onLayout={onBarLayout}
-            {...panResponder.panHandlers}
+            style={[styles.modalSheet, { paddingBottom: insets.bottom + 16 }]}
           >
-            <View style={styles.progressBarBg}>
-              <View
-                style={[
-                  styles.progressBarFill,
-                  { width: `${progressRatio * 100}%` },
+            {/* 핸들 */}
+            <View style={styles.handle} />
+
+            {/* 헤더 */}
+            <View style={styles.modalHeader}>
+              <CommonText
+                labelText={title}
+                labelTextStyle={[
+                  fonts.semiBold,
+                  { fontSize: 16, color: colors.gray10 },
                 ]}
+                numberOfLines={1}
               />
-              {/* 핸들 */}
-              <View
-                style={[
-                  styles.progressHandle,
-                  { left: `${progressRatio * 100}%` },
-                ]}
+              <TouchableOpacity
+                onPress={() => setModalVisible(false)}
+                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+              >
+                <CommonText
+                  labelText="✕"
+                  labelTextStyle={{ fontSize: 18, color: colors.gray6 }}
+                />
+              </TouchableOpacity>
+            </View>
+
+            {/* 프로그레스바 */}
+            <View
+              style={styles.progressWrap}
+              onLayout={onBarLayout}
+              {...panResponder.panHandlers}
+            >
+              <View style={styles.progressBg}>
+                <View
+                  style={[
+                    styles.progressFill,
+                    { width: `${progressRatio * 100}%` },
+                  ]}
+                />
+                <View
+                  style={[
+                    styles.progressHandle,
+                    { left: `${progressRatio * 100}%` },
+                  ]}
+                />
+              </View>
+            </View>
+
+            {/* 시간 */}
+            <View style={styles.timeRow}>
+              <CommonText
+                labelText={formatTime(displayPosition)}
+                labelTextStyle={styles.timeText}
+              />
+              <CommonText
+                labelText={formatTime(duration)}
+                labelTextStyle={[styles.timeText, { color: colors.gray5 }]}
               />
             </View>
-          </View>
 
-          {/* 시간 표시 */}
-          <View style={styles.timeRow}>
-            <CommonText
-              labelText={formatTime(
-                isDraggingState
-                  ? dragPosition * durationRef.current
-                  : position,
-              )}
-              labelTextStyle={[styles.timeText]}
-            />
-            <CommonText
-              labelText={formatTime(duration)}
-              labelTextStyle={[styles.timeText, { color: colors.gray5 }]}
-            />
+            {/* 재생/정지 버튼 */}
+            <View style={{ alignItems: 'center', marginVertical: 16 }}>
+              <TouchableOpacity
+                onPress={togglePlayback}
+                disabled={isLoading}
+                style={styles.bigPlayBtn}
+              >
+                {/* <CommonText
+                  labelText={isLoading ? '...' : isPlaying ? '⏸' : '▶'}
+                  labelTextStyle={[
+                    fonts.bold,
+                    { fontSize: isLoading ? 18 : 28, color: colors.white },
+                  ]}
+                /> */}
+                <Image
+                  source={{
+                    uri: isPlaying
+                      ? BASE_URL + '/images/music_pause.png'
+                      : BASE_URL + '/images/music_play.png',
+                  }}
+                  style={{
+                    width: 18,
+                    height: 24,
+                    resizeMode: 'contain',
+                    position: 'relative',
+                    left: !isPlaying ? 1 : 0,
+                  }}
+                />
+              </TouchableOpacity>
+            </View>
+
+            {/* 자막 리스트 */}
+            {ttsItems && ttsItems.length > 0 && (
+              <ScrollView
+                ref={scrollViewRef}
+                style={styles.ttsList}
+                showsVerticalScrollIndicator={false}
+              >
+                {ttsItems.map((item, index) => {
+                  const isActive = index === activeIdx;
+                  return (
+                    <TouchableOpacity
+                      key={item.id}
+                      activeOpacity={0.7}
+                      onPress={() => TrackPlayer.seekTo(item.startTime)}
+                      onLayout={e => {
+                        itemHeightsRef.current[index] =
+                          e.nativeEvent.layout.height;
+                      }}
+                      style={[styles.ttsItem, isActive && styles.ttsItemActive]}
+                    >
+                      <CommonText
+                        labelText={item.transcript}
+                        labelTextStyle={[
+                          styles.ttsText,
+                          isActive && styles.ttsTextActive,
+                        ]}
+                      />
+                    </TouchableOpacity>
+                  );
+                })}
+              </ScrollView>
+            )}
           </View>
         </View>
-      </View>
-
-      {/* 자막 영역 — 최초 재생 후 표시, 종료 시 숨김 */}
-      {ttsItems && ttsItems.length > 0 && hasStarted && !hasEnded && (
-        <View style={styles.subtitleWrap}>
-          <CommonText
-            labelText={currentTranscript ?? ''}
-            labelTextStyle={[styles.subtitleText]}
-          />
-        </View>
-      )}
-    </View>
+      </Modal>
+    </>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: colors.gray0,
+  // 컴팩트 트리거
+  trigger: {
+    backgroundColor: colors.gray1,
     borderRadius: 10,
     padding: 12,
-    gap: 12,
+    gap: 8,
   },
-  playButton: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
+  triggerLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  triggerIcon: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
     backgroundColor: colors.white,
     alignItems: 'center',
     justifyContent: 'center',
@@ -299,58 +417,114 @@ const styles = StyleSheet.create({
     shadowRadius: 3,
     elevation: 2,
   },
-  rightArea: {
+  // 모달
+  modalRoot: {
     flex: 1,
-    gap: 6,
+    justifyContent: 'flex-end',
   },
-  progressBarWrap: {
-    height: 20,
+  modalOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(0,0,0,0.4)',
+  },
+  modalSheet: {
+    backgroundColor: colors.white,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    paddingHorizontal: 20,
+    paddingTop: 12,
+    maxHeight: '80%',
+  },
+  handle: {
+    width: 40,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: colors.gray3,
+    alignSelf: 'center',
+    marginBottom: 16,
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 20,
+  },
+
+  // 프로그레스바
+  progressWrap: {
+    height: 24,
     justifyContent: 'center',
   },
-  progressBarBg: {
+  progressBg: {
     height: 4,
     backgroundColor: colors.gray3,
     borderRadius: 2,
     position: 'relative',
   },
-  progressBarFill: {
+  progressFill: {
     height: 4,
     backgroundColor: colors.primary,
     borderRadius: 2,
   },
   progressHandle: {
     position: 'absolute',
-    top: -5,
-    width: 14,
-    height: 14,
-    borderRadius: 7,
+    top: -6,
+    width: 16,
+    height: 16,
+    borderRadius: 8,
     backgroundColor: colors.primary,
-    marginLeft: -7,
+    marginLeft: -8,
   },
   timeRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
+    marginTop: 4,
   },
   timeText: {
     fontSize: 12,
     color: colors.gray7,
     ...fonts.medium,
   },
-  subtitleWrap: {
-    marginTop: 8,
-    minHeight: 36,
-    backgroundColor: colors.gray0,
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
+
+  // 큰 재생 버튼
+  bigPlayBtn: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    backgroundColor: colors.primary,
     alignItems: 'center',
     justifyContent: 'center',
+    shadowColor: colors.primary,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 6,
   },
-  subtitleText: {
-    fontSize: 13,
-    color: colors.gray9,
-    textAlign: 'center',
-    lineHeight: 20,
+
+  // 자막 리스트
+  ttsList: {
+    flexGrow: 0,
+  },
+  ttsItem: {
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+    marginBottom: 4,
+  },
+  ttsItemActive: {
+    backgroundColor: colors.primary3,
+  },
+  ttsText: {
+    fontSize: 14,
+    color: colors.gray6,
+    lineHeight: 22,
     ...fonts.regular,
+  },
+  ttsTextActive: {
+    color: colors.primary,
+    ...fonts.semiBold,
   },
 });

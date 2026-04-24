@@ -35,14 +35,13 @@ import {
   updateConsultStatus,
   updateCustomerMemo,
   getCustomerStatusHistory,
-  getAudioTts,
+  openCustomer,
 } from '../../api/customer';
 import {
   Customer,
   ConsultLog,
   ConsultStatus,
   StatusHistoryItem,
-  AudioTtsItem,
 } from '../../types';
 
 type Props = NativeStackScreenProps<MainStackParamList, 'CustomerInfo'>;
@@ -284,7 +283,6 @@ export default function CustomerInfo({ route, navigation }: Props) {
   const [progressStatus, setProgressStatus] = useState('');
   const [memoText, setMemoText] = useState('');
   const [statusHistory, setStatusHistory] = useState<StatusHistoryItem[]>([]);
-  const [ttsItems, setTtsItems] = useState<AudioTtsItem[]>([]);
 
   const [savedStatus, setSavedStatus] = useState('');
   const [statusModal, setStatusModal] = useState(false);
@@ -292,32 +290,31 @@ export default function CustomerInfo({ route, navigation }: Props) {
   const [statusSaving, setStatusSaving] = useState(false);
 
   useEffect(() => {
+    console.log('[CustomerInfo] 호출:', { customerType, customerIdx });
+    openCustomer(customerType, customerIdx).catch(e => console.log('[CustomerInfo] openCustomer 에러:', e?.message ?? e));
     Promise.all([
       getCustomer(customerType, customerIdx),
-      getConsultLogs(customerType, customerIdx).catch(() => [] as ConsultLog[]),
-      getConsultStatuses().catch(() => [] as ConsultStatus[]),
+      getConsultLogs(customerType, customerIdx).catch((e) => { console.log('[CustomerInfo] getConsultLogs 에러:', e?.message ?? e); return [] as ConsultLog[]; }),
+      getConsultStatuses().catch((e) => { console.log('[CustomerInfo] getConsultStatuses 에러:', e?.message ?? e); return [] as ConsultStatus[]; }),
       getCustomerStatusHistory(customerType, customerIdx).catch(
-        () => [] as StatusHistoryItem[],
+        (e) => { console.log('[CustomerInfo] getCustomerStatusHistory 에러:', e?.message ?? e); return [] as StatusHistoryItem[]; },
       ),
-      getAudioTts(customerType, customerIdx).catch(e => {
-        console.warn('[TTS] fetch error:', e);
-        return [] as AudioTtsItem[];
-      }),
     ])
-      .then(([cust, logs, stats, history, tts]) => {
-        console.log('[TTS] items:', tts.length, tts);
+      .then(([cust, logs, stats, history]) => {
+        console.log('[CustomerInfo] getCustomer 응답:', JSON.stringify(cust));
+        console.log('[CustomerInfo] tts 개수:', cust?.tts?.length ?? 0);
+        console.log('[CustomerInfo] recordingUrl:', cust?.recordingUrl);
         setCustomer(cust);
         setConsultLogs(logs);
         setStatuses(stats);
         setStatusHistory(history);
-        setTtsItems(tts);
         if (cust) {
           setProgressStatus(cust.consultStatus);
           setSavedStatus(cust.consultStatus);
           setMemoText(cust.memo ?? '');
         }
       })
-      .catch(() => {})
+      .catch(e => console.log('[CustomerInfo] 전체 에러:', e?.message ?? e))
       .finally(() => setLoading(false));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -444,9 +441,10 @@ export default function CustomerInfo({ route, navigation }: Props) {
           )}
         </View>
 
-        {/* 주소 / 이메일 */}
+        {/* 생년월일 / 직업 / 주소 */}
+        {(customer.birthDate || customer.age || customer.job || customer.address) && (
         <View style={{ paddingTop: 15, gap: 5 }}>
-          {customer.age && (
+          {(customer.birthDate || customer.age) && (
             <View
               style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}
             >
@@ -456,7 +454,13 @@ export default function CustomerInfo({ route, navigation }: Props) {
               />
               <View style={{ width: width - 90 }}>
                 <CommonText
-                  labelText={`${customer.age}세`}
+                  labelText={
+                    customer.birthDate && customer.age
+                      ? `${fmtDate(customer.birthDate)}(${customer.age}세)`
+                      : customer.birthDate
+                        ? fmtDate(customer.birthDate)
+                        : `${customer.age}세`
+                  }
                   labelTextStyle={[
                     fonts.regular,
                     { fontSize: 13, color: colors.gray9 },
@@ -504,6 +508,7 @@ export default function CustomerInfo({ route, navigation }: Props) {
             </View>
           )}
         </View>
+        )}
         {customer.familyConsult && (
           <View style={[{ flexDirection: 'row', gap: 10, marginTop: 15 }]}>
             <View
@@ -636,18 +641,20 @@ export default function CustomerInfo({ route, navigation }: Props) {
       </View>
 
       {/* ── 상담 녹취 ── */}
-      <View style={[styles.infoWrap, { marginBottom: 16, gap: 10 }]}>
-        <CommonText
-          labelText="상담 녹취"
-          labelTextStyle={[fonts.medium, { fontSize: 14 }]}
-        />
-        <AudioPlayer
-          url="https://cnj0005.cafe24.com/audio/sample_audio.wav"
-          title="상담 녹취"
-          ttsItems={ttsItems}
-          onPositionChange={() => {}}
-        />
-      </View>
+      {customer.recordingUrl && (
+        <View style={[styles.infoWrap, { marginBottom: 16, gap: 10 }]}>
+          <CommonText
+            labelText="상담 녹취"
+            labelTextStyle={[fonts.medium, { fontSize: 14 }]}
+          />
+          <AudioPlayer
+            url={customer.recordingUrl}
+            title={customer.recordingName ?? '상담 녹취'}
+            ttsItems={customer.tts}
+            onPositionChange={() => {}}
+          />
+        </View>
+      )}
 
       {/* ── 상담 이력 (최신 1건) ── */}
       {latestLog && (
@@ -834,8 +841,8 @@ export default function CustomerInfo({ route, navigation }: Props) {
         </View>
       )}
 
-      {/* ── 스케줄 (매니저 이상만) ── */}
-      {isManager && (
+      {/* ── 스케줄 (매니저 이상, 스케줄 있을 때만) ── */}
+      {isManager && customer.latestSchedule && (
         <View style={[styles.infoWrap, { marginBottom: 16, gap: 10 }]}>
           <View
             style={{
@@ -857,10 +864,9 @@ export default function CustomerInfo({ route, navigation }: Props) {
               />
             </View>
           </View>
-          {customer.latestSchedule ? (
-            <View style={{ gap: 10 }}>
+          <View style={{ gap: 10 }}>
               <CommonText
-                labelText={customer.latestSchedule.title}
+                labelText={customer.latestSchedule!.title}
                 labelTextStyle={[
                   fonts.semiBold,
                   { fontSize: 16, color: colors.gray10 },
@@ -868,13 +874,13 @@ export default function CustomerInfo({ route, navigation }: Props) {
               />
               <View style={{ flexDirection: 'row', alignItems: 'center' }}>
                 <CommonText
-                  labelText={fmtDate(customer.latestSchedule.scheduleDate)}
+                  labelText={fmtDate(customer.latestSchedule!.scheduleDate)}
                   labelTextStyle={[
                     fonts.regular,
                     { fontSize: 12, color: colors.primary },
                   ]}
                 />
-                {customer.latestSchedule.scheduleTime && (
+                {customer.latestSchedule!.scheduleTime && (
                   <>
                     <View
                       style={{
@@ -885,7 +891,7 @@ export default function CustomerInfo({ route, navigation }: Props) {
                       }}
                     />
                     <CommonText
-                      labelText={customer.latestSchedule.scheduleTime}
+                      labelText={customer.latestSchedule!.scheduleTime}
                       labelTextStyle={[
                         fonts.regular,
                         { fontSize: 12, color: colors.primary },
@@ -894,7 +900,7 @@ export default function CustomerInfo({ route, navigation }: Props) {
                   </>
                 )}
               </View>
-              {customer.latestSchedule.addr1 && (
+              {customer.latestSchedule!.addr1 && (
                 <View
                   style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}
                 >
@@ -905,8 +911,8 @@ export default function CustomerInfo({ route, navigation }: Props) {
                   <View style={{ width: width - 90 }}>
                     <CommonText
                       labelText={[
-                        customer.latestSchedule.addr1,
-                        customer.latestSchedule.addr2,
+                        customer.latestSchedule!.addr1,
+                        customer.latestSchedule!.addr2,
                       ]
                         .filter(Boolean)
                         .join(' ')}
@@ -919,12 +925,6 @@ export default function CustomerInfo({ route, navigation }: Props) {
                 </View>
               )}
             </View>
-          ) : (
-            <CommonText
-              labelText="등록된 스케줄이 없습니다."
-              labelTextStyle={[{ fontSize: 14, color: colors.gray5 }]}
-            />
-          )}
           <View style={styles.mapWrap}>
             <WebView
               source={{

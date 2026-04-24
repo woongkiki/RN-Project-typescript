@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import Layout from '../../components/Layout';
 import {
   ActivityIndicator,
@@ -26,6 +26,7 @@ import { BASE_URL } from '../../api/util';
 import { getCustomers } from '../../api/customer';
 import { Customer } from '../../types';
 import { useAuthStore } from '../../store';
+import { useFocusEffect } from '@react-navigation/native';
 
 type Props = NativeStackScreenProps<MainStackParamList, 'AllList'>;
 
@@ -65,30 +66,38 @@ export default function AllList({ navigation }: Props) {
       !!activeFilter.startDate ||
       !!activeFilter.endDate);
 
-  useEffect(() => {
-    if (!user?.idx) return;
-    getCustomers({ assignedAccountIdx: user.idx }).then(data => {
-      setAllCustomers(data);
-    });
-  }, [user?.idx]);
+  useFocusEffect(
+    useCallback(() => {
+      if (!user?.idx) return;
+      getCustomers({ assignedAccountIdx: user.idx }).then(data => {
+        console.log('[AllList] getCustomers count:', data.length, 'types:', data.map(c => c.customerType));
+        setAllCustomers(data);
+      });
+    }, [user?.idx]),
+  );
 
   useEffect(() => {
     let result = [...allCustomers];
 
     if (selectCategory === '미열람') {
-      result = result.filter(c => c.consultStatus === '상담대기');
+      result = result.filter(c => !c.isOpen);
     } else if (selectCategory === '열람') {
-      result = result.filter(c => c.consultStatus !== '상담대기');
+      result = result.filter(c => c.isOpen);
     }
 
     if (activeFilter) {
       if (activeFilter.startDate && activeFilter.endDate) {
         const start = toStartOfDay(activeFilter.startDate);
         const end = toEndOfDay(activeFilter.endDate);
+        console.log('[AllList] 날짜 필터 범위:', start.toISOString(), '~', end.toISOString());
+        console.log('[AllList] 전체 고객 createdAt 샘플:', result.slice(0, 5).map(c => ({ name: c.name, createdAt: c.createdAt })));
         result = result.filter(c => {
-          const d = new Date(c.updatedAt);
-          return d >= start && d <= end;
+          const d = new Date(c.createdAt);
+          const pass = d >= start && d <= end;
+          console.log(`[AllList] ${c.name} | createdAt: ${c.createdAt} | parsed: ${d.toISOString()} | pass: ${pass}`);
+          return pass;
         });
+        console.log('[AllList] 날짜 필터 후 결과 수:', result.length);
       }
 
       if (activeFilter.selectedStatuses.length > 0) {

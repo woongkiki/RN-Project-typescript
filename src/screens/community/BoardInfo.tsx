@@ -8,6 +8,7 @@ import {
   ActivityIndicator,
   Alert,
   Image,
+  Keyboard,
   StyleSheet,
   TouchableOpacity,
   View,
@@ -28,6 +29,7 @@ import {
   BoardComment,
 } from '../../api/board';
 import { BoardPost } from '../../types';
+import { useAuthStore } from '../../store';
 
 type Props = NativeStackScreenProps<MainStackParamList, 'BoardInfo'>;
 
@@ -40,6 +42,7 @@ const toShortDate = (iso: string | null | undefined) =>
 export default function BoardInfo({ route, navigation }: Props) {
   const { idx } = route.params;
   const { width } = useAppDimensions();
+  const user = useAuthStore(state => state.user);
 
   const [post, setPost] = useState<BoardPost | null>(null);
   const [loading, setLoading] = useState(true);
@@ -53,14 +56,19 @@ export default function BoardInfo({ route, navigation }: Props) {
   const postIdx = parseInt(idx, 10);
 
   useEffect(() => {
+    console.log('[BoardInfo] postIdx:', postIdx);
     getBoardPost(postIdx)
       .then(data => {
+        console.log('[BoardInfo] getBoardPost 응답:', JSON.stringify(data));
         setPost(data);
         if (data.boardType === 'free') {
           return getBoardComments(postIdx).then(setComments);
         }
       })
-      .catch(() => Alert.alert('오류', '게시글을 불러올 수 없습니다.'))
+      .catch(e => {
+        console.log('[BoardInfo] 에러:', e?.message ?? e);
+        Alert.alert('오류', '게시글을 불러올 수 없습니다.');
+      })
       .finally(() => setLoading(false));
   }, [postIdx]);
 
@@ -71,13 +79,14 @@ export default function BoardInfo({ route, navigation }: Props) {
       const newIdx = await createBoardComment(postIdx, commentInput.trim());
       const newComment: BoardComment = {
         idx: newIdx,
-        accountName: '',
+        accountName: user?.name ?? '',
         content: commentInput.trim(),
         createdAt: new Date().toISOString(),
         isMine: true,
       };
       setComments(prev => [...prev, newComment]);
       setCommentInput('');
+      Keyboard.dismiss();
     } catch (e: any) {
       Alert.alert('오류', e.message ?? '댓글 등록에 실패했습니다.');
     } finally {

@@ -103,5 +103,14 @@ src/assets/
 *.jpeg
 *.gif
 *.webp
-!# 단, 필요하면 아래처럼 특정 파일 예외 가능
-# !src/assets/logo.png
+
+# =========================
+# 포트폴리오 제외 파일
+# =========================
+CLAUDE.md
+docs/
+test.txt
+Gemfile
+Gemfile.lock
+.bundle/
+package-lock.json

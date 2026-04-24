@@ -21,7 +21,11 @@ import { MainStackParamList } from '../../navigation/types';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { useCallback } from 'react';
 import { BASE_URL } from '../../api/util';
-import { getProgressCounts, getStatusHistory, getCustomersPaged } from '../../api/customer';
+import {
+  getProgressCounts,
+  getStatusHistory,
+  getDbStats,
+} from '../../api/customer';
 import { ProgressCounts, StatusHistoryItem } from '../../types';
 import { useAuthStore } from '../../store';
 import { getNotifications } from '../../api/notification';
@@ -49,17 +53,26 @@ export default function DBScreen() {
   const [statusHistory, setStatusHistory] = useState<StatusHistoryItem[]>([]);
 
   const loadData = () => {
-    getProgressCounts().then(setProgressCounts).catch(() => {});
-    getStatusHistory(20, orderBy).then(setStatusHistory).catch(() => {});
-    if (user?.idx) {
-      getCustomersPaged({ assignedAccountIdx: user.idx, page: 1, limit: 1 })
-        .then(res => setTotalCustomers(res.total))
-        .catch(() => {});
-    }
+    const today = new Date();
+    console.log('[DBScreen] loadData 호출, userIdx:', user?.idx);
+    getProgressCounts(user?.idx)
+      .then(data => {
+        console.log('[DBScreen] getProgressCounts 응답:', JSON.stringify(data));
+        setProgressCounts(data);
+      })
+      .catch(e => console.log('[DBScreen] getProgressCounts 에러:', e));
+    getStatusHistory(20, orderBy)
+      .then(setStatusHistory)
+      .catch(() => {});
+    getDbStats(today.getFullYear(), today.getMonth() + 1, user?.idx)
+      .then(data => {
+        console.log('[DBScreen] getDbStats total:', data.totalCount);
+        setTotalCustomers(data.totalCount);
+      })
+      .catch(e => console.log('[DBScreen] getDbStats 에러:', e));
   };
 
   useEffect(() => {
-    loadData();
     getNotifications()
       .then(list => setHasUnread(list.some(n => !n.isRead)))
       .catch(() => {});
@@ -68,7 +81,8 @@ export default function DBScreen() {
 
   useFocusEffect(
     useCallback(() => {
-      getStatusHistory(20, orderBy).then(setStatusHistory).catch(() => {});
+      loadData();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [orderBy]),
   );
 
@@ -202,12 +216,12 @@ export default function DBScreen() {
                 progressCounts.call +
                 progressCounts.absent
               }
-              total={totalCustomers || 1}
+              total={totalCustomers}
               label={'DB 진행률'}
             />
             <ProgressBox
               value={progressCounts.meeting}
-              total={totalCustomers || 1}
+              total={totalCustomers}
               label={'미팅 진행률'}
             />
           </View>
@@ -246,7 +260,7 @@ export default function DBScreen() {
               label="미팅"
               count={String(progressCounts.meeting)}
               onPress={() =>
-                navigation.navigate('ProgressList', { cate: '미팅완료' })
+                navigation.navigate('ProgressList', { cate: '상담중' })
               }
             />
             <View
@@ -260,7 +274,7 @@ export default function DBScreen() {
               label="통화"
               count={String(progressCounts.call)}
               onPress={() =>
-                navigation.navigate('ProgressList', { cate: '통화' })
+                navigation.navigate('ProgressList', { cate: '재연락' })
               }
             />
             <View
