@@ -2,6 +2,7 @@
 # OS
 # =========================
 .DS_Store
+Thumbs.db
 
 # =========================
 # Node
@@ -34,9 +35,26 @@ coverage/
 !.yarn/versions
 
 # =========================
-# iOS / Xcode
+# iOS / Xcode (포트폴리오 제외)
 # =========================
-ios/build/
+ios/
+
+# =========================
+# Android / Gradle (포트폴리오 제외)
+# =========================
+android/
+
+# =========================
+# CocoaPods / Ruby vendor
+# =========================
+ios/Pods/
+vendor/
+
+# =========================
+# 빌드 산출물
+# =========================
+build/
+dist/
 DerivedData/
 *.xcworkspace
 !default.xcworkspace
@@ -47,32 +65,10 @@ xcuserdata/
 *.dSYM
 **/.xcode.env.local
 
-# CocoaPods
-ios/Pods/
-vendor/bundle/
-
-# =========================
-# Android / Gradle
-# =========================
-android/.gradle/
-android/build/
-android/app/build/
-android/local.properties
-android/.idea/
-
-# NDK / CMake (🔥 중요)
-android/.cxx/
-android/app/.cxx/
-
-# IntelliJ
+# IntelliJ / IDE
 *.iml
 .idea/
 *.hprof
-
-# Keystore (릴리즈 키 절대 금지)
-# *.keystore
-# *.jks
-# !debug.keystore
 
 # =========================
 # Fastlane
@@ -82,4 +78,30 @@ android/app/.cxx/
 **/fastlane/screenshots
 **/fastlane/test_output
 
+# =========================
+# 보안 / 민감 파일
+# =========================
 .env
+.env.*
+*.keystore
+*.jks
+!debug.keystore
+
+# =========================
+# DB / SQL 스크립트 (포트폴리오 제외)
+# =========================
+*.sql
+
+# =========================
+# Assets (이미지/폰트 — 포트폴리오 제외)
+# =========================
+src/assets/
+
+# 루트 이미지 파일
+*.png
+*.jpg
+*.jpeg
+*.gif
+*.webp
+!# 단, 필요하면 아래처럼 특정 파일 예외 가능
+# !src/assets/logo.png
