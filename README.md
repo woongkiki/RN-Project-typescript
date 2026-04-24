@@ -1,6 +1,10 @@
-# InsuranceCNJ — 인사이트코어
+# 보험설계사 업무 지원 앱 — React Native
 
-보험설계사를 위한 고객 관리 및 업무 지원 React Native 앱입니다.
+보험설계사를 위한 고객 관리 및 업무 지원 모바일 앱입니다.  
+React Native + TypeScript로 개발되었으며, 역할 기반 접근 제어, 3단계 네비게이션 구조, Zustand 상태 관리 등을 적용했습니다.
+
+> 이 레포지토리는 포트폴리오 목적으로 공개한 버전입니다.  
+> API 엔드포인트는 플레이스홀더로 대체되어 있으며, 데모 계정(`test / test`)으로 앱 흐름을 확인할 수 있습니다.
 
 ---
 
@@ -15,7 +19,6 @@
 7. [화면 목록](#화면-목록)
 8. [공통 컴포넌트](#공통-컴포넌트)
 9. [스타일 컨벤션](#스타일-컨벤션)
-10. [플랫폼별 참고사항](#플랫폼별-참고사항)
 
 ---
 
@@ -45,7 +48,7 @@
 src/
 ├── api/               # API 통신 함수 모음
 │   ├── util.ts        # BASE_URL 상수 및 공통 유틸
-│   ├── auth.ts        # 로그인 API
+│   ├── auth.ts        # 로그인 API (데모: mockLogin)
 │   ├── customer.ts    # 고객 목록/상세/상태변경/이력/DB통계
 │   ├── board.ts       # 게시판 목록/상세/댓글
 │   ├── notification.ts# 알림 API
@@ -101,6 +104,13 @@ yarn lint
 # 테스트
 yarn test
 ```
+
+**데모 계정**
+
+| ID | PW | 역할 |
+|---|---|---|
+| test | test | FP (일반 설계사) |
+| test2 | test2 | BM (지점장, 최초 로그인 플로우) |
 
 ---
 
@@ -173,14 +183,8 @@ AsyncStorage에 `persist`로 저장되며, 앱 재시작 시 자동 복원됩니
 
 ## API 레이어
 
-### 서버 URL
-
-| 상수 | URL | 용도 |
-|---|---|---|
-| `BASE_URL` | `https://cnj0005.cafe24.com` | 이미지 등 정적 리소스 |
-| `BASE_URL2` | `http://insightcore.cafe24.com` | 영업점 REST API |
-
-모든 API 요청에는 `Authorization: Bearer {token}` 및 `X-App-Token: {token}` 헤더가 포함됩니다.
+모든 API 요청에는 `Authorization: Bearer {token}` 및 `X-App-Token: {token}` 헤더가 포함됩니다.  
+이 포트폴리오 버전에서는 실서버 URL이 플레이스홀더로 대체되어 있으며, 로그인은 mock 데이터로 동작합니다.
 
 ### 주요 API 모듈
 
@@ -292,26 +296,3 @@ AsyncStorage에 `persist`로 저장되며, 앱 재시작 시 자동 복원됩니
   - 전역 폰트 스케일 비활성화: `index.js`에서 `Text.defaultProps.allowFontScaling = false` 설정
 - **스타일**: `StyleSheet.create()` 원칙
 - **그림자**: iOS `shadow*` 속성과 Android `elevation` 병행 적용
-
----
-
-## 플랫폼별 참고사항
-
-### Android
-
-- `android/app/src/main/res/xml/network_security_config.xml`에서 허용 도메인 관리
-  - 에뮬레이터 Metro 연결: `localhost`, `10.0.2.2` cleartext 허용
-  - API 서버: `insightcore.cafe24.com` cleartext 허용
-- 멀티라인 TextInput 상단 정렬: `textAlignVertical: 'top'` (Android 전용 prop)
-
-### iOS
-
-- `ios/InsuranceCNJ.xcodeproj`에서 빌드 설정 관리
-- Info.plist에서 NSAppTransportSecurity 설정 필요 (HTTP 허용)
-
-### 요금제별 기능 차이
-
-| planCode | 스케줄 탭 | 통계/분석 |
-|---|---|---|
-| A, B | X | X |
-| C, D | O | O |
