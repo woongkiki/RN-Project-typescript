@@ -1,6 +1,4 @@
-# 보험설계사 업무 지원 앱 — React Native
-
-보험설계사를 위한 고객 관리 및 업무 지원 모바일 앱입니다.  
+# React Native - TypeScript
 React Native + TypeScript로 개발되었으며, 역할 기반 접근 제어, 3단계 네비게이션 구조, Zustand 상태 관리 등을 적용했습니다.
 
 > 이 레포지토리는 포트폴리오 목적으로 공개한 버전입니다.  
