@@ -260,23 +260,19 @@ export const getMeApi = async (token: string): Promise<MeResponse> => {
   return json.data;
 };
 
+// 포트폴리오 데모용 — 실제 서버 대신 mock 데이터로 동작합니다
+// 데모 계정: test / test, test2 / test2
 export const loginApi = async (
   id: string,
   password: string,
 ): Promise<LoginResponse> => {
-  const response = await fetch(`${BASE_URL2}/api/app/auth/login`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ login_id: id, password }),
+  return new Promise((resolve, reject) => {
+    setTimeout(() => {
+      try {
+        resolve(mockLogin(id, password));
+      } catch (e) {
+        reject(e);
+      }
+    }, 500);
   });
-
-  const json: ApiResponse<LoginResponse> = await response.json();
-
-  console.log('loginApi result', json);
-
-  if (!json.success || !json.data) {
-    throw new Error(json.message ?? '로그인에 실패했습니다.');
-  }
-
-  return json.data;
 };
